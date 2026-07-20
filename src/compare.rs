@@ -986,38 +986,40 @@ fn build_overview_svg(
                 esc(&aria_label)
             ));
 
-            let (label_x, anchor) = if e.kind == "pct" && e.pct.is_some() && scale > 0.0 {
-                let pct = e.pct.unwrap();
-                let bar_len = pct.abs() * scale;
-                let (bx0, bx1, round_end) = if pct >= 0.0 {
-                    (mid_x, mid_x + bar_len, "max")
-                } else {
-                    (mid_x - bar_len, mid_x, "min")
-                };
-                let path = rounded_bar_path(
-                    bx0,
-                    bx1,
-                    y_center - OV_BAR_H / 2.0,
-                    OV_BAR_H,
-                    4.0,
-                    round_end,
-                );
-                parts.push(format!(
+            let (label_x, anchor) = match (e.kind, e.pct) {
+                ("pct", Some(pct)) if scale > 0.0 => {
+                    let bar_len = pct.abs() * scale;
+                    let (bx0, bx1, round_end) = if pct >= 0.0 {
+                        (mid_x, mid_x + bar_len, "max")
+                    } else {
+                        (mid_x - bar_len, mid_x, "min")
+                    };
+                    let path = rounded_bar_path(
+                        bx0,
+                        bx1,
+                        y_center - OV_BAR_H / 2.0,
+                        OV_BAR_H,
+                        4.0,
+                        round_end,
+                    );
+                    parts.push(format!(
                     "<path d=\"{path}\" class=\"tb-overview-bar\" style=\"fill:var(--series-{})\"></path>",
                     slot + 1
                 ));
-                if pct >= 0.0 {
-                    (bx1 + OV_LABEL_GAP, "start")
-                } else {
-                    (bx0 - OV_LABEL_GAP, "end")
+                    if pct >= 0.0 {
+                        (bx1 + OV_LABEL_GAP, "start")
+                    } else {
+                        (bx0 - OV_LABEL_GAP, "end")
+                    }
                 }
-            } else {
-                parts.push(format!(
+                _ => {
+                    parts.push(format!(
                     "<line x1=\"{:.2}\" y1=\"{y_center:.2}\" x2=\"{:.2}\" y2=\"{y_center:.2}\" class=\"tb-overview-stub\"></line>",
                     mid_x - 5.0,
                     mid_x + 5.0
                 ));
-                (mid_x + OV_LABEL_GAP, "start")
+                    (mid_x + OV_LABEL_GAP, "start")
+                }
             };
 
             parts.push(format!(
@@ -1172,7 +1174,7 @@ fn build_html_report(
         .filter(|(_, &c)| c > 0)
         .map(|(i, &c)| (i, c))
         .collect();
-    ranked.sort_by(|a, b| b.1.cmp(&a.1));
+    ranked.sort_by_key(|entry| std::cmp::Reverse(entry.1));
     let summary_html = if !ranked.is_empty() && win_total > 0 {
         let (leader_idx, leader_count) = ranked[0];
         let headline = format!(

@@ -486,7 +486,7 @@ fn newest_report(root: &Path) -> Option<PathBuf> {
         })
         .filter_map(|p| p.metadata().and_then(|m| m.modified()).ok().map(|t| (t, p)))
         .collect();
-    candidates.sort_by(|a, b| b.0.cmp(&a.0));
+    candidates.sort_by_key(|entry| std::cmp::Reverse(entry.0));
     candidates.into_iter().next().map(|(_, p)| p)
 }
 

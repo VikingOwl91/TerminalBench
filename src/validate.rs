@@ -2233,7 +2233,7 @@ fn compare_reports(a: &Value, b: &Value) -> (String, Vec<Reason>) {
     // common identities, sorted by str(tuple)
     let mut common: Vec<&(String, Vec<Value>, Value)> =
         ar.iter().filter(|(k, _, _)| bset.contains(k)).collect();
-    common.sort_by(|x, y| tuple_repr(&x.1).cmp(&tuple_repr(&y.1)));
+    common.sort_by_key(|x| tuple_repr(&x.1));
 
     let mut required_env: BTreeSet<&str> = [
         "os",
