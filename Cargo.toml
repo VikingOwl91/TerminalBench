@@ -1,0 +1,15 @@
+[package]
+name = "tbench"
+version = "2.0.0-dev"
+edition = "2021"
+description = "Terminal/shell micro-benchmark runner (single-binary Rust implementation)"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+libc = "0.2"
+wait-timeout = "0.2.1"
+
+[profile.release]
+lto = true
+strip = true

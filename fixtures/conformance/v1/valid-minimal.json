@@ -1,0 +1,76 @@
+{
+  "$schema": "urn:tbench:schema:report:v1",
+  "wire_version": "1.0.0",
+  "producer": {
+    "name": "independent.example",
+    "version": {"status": "known", "value": "1.0.0"}
+  },
+  "protocol": {
+    "id": "urn:tbench:protocol:reporting",
+    "version": "1.0.0"
+  },
+  "run_context": {
+    "environment": {
+      "os": {"status": "known", "value": "darwin"},
+      "architecture": {"status": "known", "value": "aarch64"},
+      "terminal": {"status": "known", "value": "ExampleTerm 1.0"},
+      "shell": {"status": "known", "value": "zsh 5.9"},
+      "machine_model": {"status": "known", "value": "ExampleMachine"},
+      "power_source": {"status": "known", "value": "ac"},
+      "low_power_mode": {"status": "known", "value": false},
+      "display_refresh_hz": {"status": "known", "value": 60},
+      "synchronized_output_supported": {"status": "known", "value": "supported"}
+    }
+  },
+  "meta": {
+    "timestamp": "2026-07-16T00:00:00Z",
+    "os": "darwin",
+    "runner": "independent.example",
+    "terminal": "ExampleTerm 1.0",
+    "shell": "zsh 5.9",
+    "power_source": "ac",
+    "low_power_mode": false,
+    "machine_model": "ExampleMachine",
+    "display_refresh_hz": 60,
+    "synchronized_output_supported": "supported"
+  },
+  "results": [
+    {
+      "metric": "shell.startup",
+      "shell": "zsh",
+      "unit": "ms",
+      "median": 10.0,
+      "p95": 12.0,
+      "stddev": 1.0,
+      "runs": 3,
+      "outliers_removed": 0,
+      "backend": "zsh-timer",
+      "samples": [9.0, 10.0, 12.0],
+      "measurement": {
+        "profile_id": "org.terminalbench.shell.startup",
+        "profile_version": "1.0.0",
+        "classification": "sampled",
+        "method_id": "org.terminalbench.method.process-wall-clock",
+        "method_version": "1.0.0",
+        "scope": "shell-process-startup",
+        "observed_boundary": "process-invocation-to-process-exit",
+        "unit": "ms",
+        "direction": "lower-is-better",
+        "limitations": [
+          "Includes shell startup configuration and process scheduling; it does not isolate terminal rendering."
+        ],
+        "excluded_claims": ["Terminal rendering latency"],
+        "workload": {
+          "status": "known",
+          "id": "urn:tbench:workload:shell-startup:v1",
+          "version": "1.0.0"
+        },
+        "dimensions": {
+          "shell": "zsh",
+          "backend": "zsh-timer",
+          "variant": null
+        }
+      }
+    }
+  ]
+}

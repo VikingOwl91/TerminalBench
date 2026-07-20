@@ -1,0 +1,7 @@
+#!/bin/sh
+# tbench-validate launcher — the Reporting Spec v1 validator CLI, served
+# by the same Rust binary (`tbench validate ...`). Kept as a separate
+# entry point because the spec/docs/CI quickstarts invoke it by this name.
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+exec "$ROOT/bin/tbench" validate "$@"

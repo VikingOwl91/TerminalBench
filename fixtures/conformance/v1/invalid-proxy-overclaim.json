@@ -1,0 +1,71 @@
+{
+  "$schema": "urn:tbench:schema:report:v1",
+  "wire_version": "1.0.0",
+  "producer": {
+    "name": "invalid.example",
+    "version": {"status": "unknown", "reason": "not recorded"}
+  },
+  "protocol": {
+    "id": "urn:tbench:protocol:reporting",
+    "version": "1.0.0"
+  },
+  "run_context": {
+    "environment": {
+      "os": {"status": "known", "value": "darwin"},
+      "architecture": {"status": "known", "value": "aarch64"},
+      "terminal": {"status": "known", "value": "ExampleTerm 1.0"},
+      "shell": {"status": "known", "value": "zsh 5.9"},
+      "machine_model": {"status": "unknown", "reason": "not recorded"},
+      "power_source": {"status": "unknown", "reason": "not recorded"},
+      "low_power_mode": {"status": "unknown", "reason": "not recorded"},
+      "display_refresh_hz": {"status": "unknown", "reason": "not recorded"},
+      "synchronized_output_supported": {"status": "known", "value": "supported"}
+    }
+  },
+  "meta": {
+    "timestamp": "2026-07-16T00:00:00Z",
+    "os": "darwin",
+    "runner": "invalid.example",
+    "terminal": "ExampleTerm 1.0",
+    "shell": "zsh 5.9",
+    "synchronized_output_supported": "supported"
+  },
+  "results": [
+    {
+      "metric": "render.throughput",
+      "shell": null,
+      "unit": "MBps",
+      "median": 100.0,
+      "p95": 110.0,
+      "stddev": 4.0,
+      "runs": 3,
+      "outliers_removed": 0,
+      "backend": "zsh-timer",
+      "variant": "plain",
+      "notes": "Complete rendering reaches the screen at 100 MB/s.",
+      "measurement": {
+        "profile_id": "org.terminalbench.render.throughput.bytes",
+        "profile_version": "1.0.0",
+        "classification": "direct-observation",
+        "method_id": "org.terminalbench.method.pty-write-wall-clock",
+        "method_version": "1.0.0",
+        "scope": "screen-presentation",
+        "observed_boundary": "final-frame-presented-to-display",
+        "unit": "MBps",
+        "direction": "higher-is-better",
+        "limitations": ["None"],
+        "excluded_claims": ["None"],
+        "workload": {
+          "status": "known",
+          "id": "urn:tbench:workload:render-plain:v1",
+          "version": "1.0.0"
+        },
+        "dimensions": {
+          "shell": null,
+          "backend": "zsh-timer",
+          "variant": "plain"
+        }
+      }
+    }
+  ]
+}

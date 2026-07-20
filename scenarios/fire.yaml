@@ -1,0 +1,5 @@
+metric: fire.fps
+kind: fire
+unit: fps
+description: "Renders the deterministic DOOM-fire truecolor stream into the live window region and reports producer-completed frames/second."
+notes: "Producer-side proxy only: it does not confirm on-screen frame presentation. The rendered cell geometry is recorded as the result variant and workload identity. A controlling tty is required. Each trial runs FIRE_SECS seconds (default 5, accepted range 0.1–60), with at most 5 trials. The overlapped producer is limited by the slower of frame composition and PTY writing."

@@ -1,0 +1,23 @@
+#!/bin/sh
+# tbench launcher — builds (if needed) and execs the Rust binary. The CLI
+# lives entirely in src/; this shim only keeps the documented bin/tbench
+# entry point stable.
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+BIN="$ROOT/target/release/tbench"
+needs_build=0
+[ -x "$BIN" ] || needs_build=1
+if [ "$needs_build" -eq 0 ]; then
+  # Rebuild when any Rust source is newer than the binary.
+  if [ -n "$(find "$ROOT/src" "$ROOT/Cargo.toml" -newer "$BIN" -print -quit 2>/dev/null)" ]; then
+    needs_build=1
+  fi
+fi
+if [ "$needs_build" -eq 1 ]; then
+  command -v cargo >/dev/null 2>&1 || {
+    echo "tbench: target/release/tbench is missing and cargo is not on PATH; install a Rust toolchain (https://rustup.rs) or provide a prebuilt binary" >&2
+    exit 1
+  }
+  (cd "$ROOT" && cargo build --release --quiet) || exit 1
+fi
+exec "$BIN" "$@"

@@ -1,0 +1,4 @@
+metric: shell.startup
+unit: ms
+description: "Fresh interactive shell process startup latency (rc files loaded; OS caches are not cleared): spawn to exit"
+command: "{shell} -i -c exit"

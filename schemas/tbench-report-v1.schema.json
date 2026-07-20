@@ -1,0 +1,304 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tbench:schema:report:v1",
+  "$comment": "Structural subset only: Schema validation is necessary but not sufficient for CONFORMANT, claim-safe, or COMPARABLE status. The normative specification and semantic conformance corpus are authoritative.",
+  "title": "TerminalBench Reporting Specification v1 report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "wire_version", "producer", "protocol", "run_context", "meta", "results"],
+  "properties": {
+    "$schema": {"const": "urn:tbench:schema:report:v1"},
+    "wire_version": {"const": "1.0.0"},
+    "producer": {"$ref": "#/$defs/producer"},
+    "protocol": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": {"const": "urn:tbench:protocol:reporting"},
+        "version": {"const": "1.0.0"}
+      }
+    },
+    "run_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["environment"],
+      "properties": {"environment": {"$ref": "#/$defs/environment"}}
+    },
+    "meta": {"$ref": "#/$defs/meta"},
+    "results": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/result"}
+    },
+    "extensions": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$"}
+    }
+  },
+  "$defs": {
+    "knownString": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "value"],
+      "properties": {"status": {"const": "known"}, "value": {"type": "string", "minLength": 1}}
+    },
+    "knownBoolean": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "value"],
+      "properties": {"status": {"const": "known"}, "value": {"type": "boolean"}}
+    },
+    "knownNumber": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "value"],
+      "properties": {"status": {"const": "known"}, "value": {"type": "number", "exclusiveMinimum": 0, "maximum": 1e308}}
+    },
+    "unknownFact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "reason"],
+      "properties": {"status": {"const": "unknown"}, "reason": {"type": "string", "minLength": 1}}
+    },
+    "stringFact": {"oneOf": [{"$ref": "#/$defs/knownString"}, {"$ref": "#/$defs/unknownFact"}]},
+    "booleanFact": {"oneOf": [{"$ref": "#/$defs/knownBoolean"}, {"$ref": "#/$defs/unknownFact"}]},
+    "numberFact": {"oneOf": [{"$ref": "#/$defs/knownNumber"}, {"$ref": "#/$defs/unknownFact"}]},
+    "syncFact": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "value"],
+          "properties": {
+            "status": {"const": "known"},
+            "value": {"enum": ["supported", "unsupported", "no_reply"]}
+          }
+        },
+        {"$ref": "#/$defs/unknownFact"}
+      ]
+    },
+    "osFact": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "value"],
+          "properties": {
+            "status": {"const": "known"},
+            "value": {"type": "string", "pattern": "^(?:darwin|linux|freebsd|openbsd|netbsd|windows|other:[a-z0-9][a-z0-9._-]*)$"}
+          }
+        },
+        {"$ref": "#/$defs/unknownFact"}
+      ]
+    },
+    "archFact": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "value"],
+          "properties": {
+            "status": {"const": "known"},
+            "value": {"type": "string", "pattern": "^(?:aarch64|x86_64|other:[a-z0-9][a-z0-9._-]*)$"}
+          }
+        },
+        {"$ref": "#/$defs/unknownFact"}
+      ]
+    },
+    "powerFact": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "value"],
+          "properties": {"status": {"const": "known"}, "value": {"enum": ["ac", "battery", "ups"]}}
+        },
+        {"$ref": "#/$defs/unknownFact"}
+      ]
+    },
+    "machineFact": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "value"],
+          "properties": {"status": {"const": "known"}, "value": {"type": "string", "pattern": "^\\S(?:.*\\S)?$"}}
+        },
+        {"$ref": "#/$defs/unknownFact"}
+      ]
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "version": {"$ref": "#/$defs/stringFact"}
+      }
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["os", "architecture", "terminal", "shell", "machine_model", "power_source", "low_power_mode", "display_refresh_hz", "synchronized_output_supported"],
+      "properties": {
+        "os": {"$ref": "#/$defs/osFact"},
+        "architecture": {"$ref": "#/$defs/archFact"},
+        "terminal": {"$ref": "#/$defs/stringFact"},
+        "shell": {"$ref": "#/$defs/stringFact"},
+        "machine_model": {"$ref": "#/$defs/machineFact"},
+        "power_source": {"$ref": "#/$defs/powerFact"},
+        "low_power_mode": {"$ref": "#/$defs/booleanFact"},
+        "display_refresh_hz": {"$ref": "#/$defs/numberFact"},
+        "synchronized_output_supported": {"$ref": "#/$defs/syncFact"}
+      }
+    },
+    "meta": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["timestamp", "os", "runner", "terminal", "shell", "synchronized_output_supported"],
+      "properties": {
+        "timestamp": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})$"
+        },
+        "os": {"type": "string", "pattern": "^(?:darwin|linux|freebsd|openbsd|netbsd|windows|other:[a-z0-9][a-z0-9._-]*)$"},
+        "runner": {"type": "string", "minLength": 1},
+        "terminal": {"type": "string", "minLength": 1},
+        "shell": {"type": "string", "minLength": 1},
+        "synchronized_output_supported": {"enum": ["supported", "unsupported", "no_reply"]},
+        "frame_skip_risk_note": {"type": "string", "minLength": 1},
+        "power_source": {"enum": ["ac", "battery", "ups"]},
+        "low_power_mode": {"type": "boolean"},
+        "machine_model": {"type": "string", "pattern": "^\\S(?:.*\\S)?$"},
+        "cpu": {"type": "string", "minLength": 1},
+        "gpu": {"type": "string", "minLength": 1},
+        "display_refresh_hz": {"type": "number", "exclusiveMinimum": 0, "maximum": 1e308},
+        "meta_notes": {"type": "string", "minLength": 1}
+      }
+    },
+    "workload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "id", "version"],
+          "properties": {
+            "status": {"const": "known"},
+            "id": {"type": "string", "pattern": "^urn:tbench:workload:[a-z0-9-]+:v1$"},
+            "version": {"const": "1.0.0"}
+          }
+        },
+        {"$ref": "#/$defs/unknownFact"}
+      ]
+    },
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["shell", "backend", "variant"],
+      "properties": {
+        "shell": {"type": ["string", "null"]},
+        "backend": {"type": "string", "minLength": 1},
+        "variant": {"type": ["string", "null"]}
+      }
+    },
+    "measurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["profile_id", "profile_version", "classification", "method_id", "method_version", "scope", "observed_boundary", "unit", "direction", "limitations", "excluded_claims", "workload", "dimensions"],
+      "properties": {
+        "profile_id": {"type": "string", "pattern": "^org\\.terminalbench\\.[a-z0-9.-]+$"},
+        "profile_version": {"const": "1.0.0"},
+        "classification": {"enum": ["direct-observation", "proxy", "sampled"]},
+        "method_id": {"type": "string", "pattern": "^org\\.terminalbench\\.method\\.[a-z0-9.-]+$"},
+        "method_version": {"const": "1.0.0"},
+        "scope": {"type": "string", "minLength": 1},
+        "observed_boundary": {"type": "string", "minLength": 1},
+        "unit": {"enum": ["ms", "us", "MBps", "linesps", "MB", "pct", "fps"]},
+        "direction": {"enum": ["lower-is-better", "higher-is-better"]},
+        "limitations": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "excluded_claims": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "workload": {"$ref": "#/$defs/workload"},
+        "dimensions": {"$ref": "#/$defs/dimensions"}
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["metric", "shell", "unit", "median", "p95", "stddev", "runs", "outliers_removed", "backend", "measurement"],
+      "properties": {
+        "metric": {"enum": ["shell.startup", "cmd.overhead", "render.throughput", "scroll.proxy", "input.latency", "resource.mem", "resource.cpu", "fire.fps"]},
+        "shell": {"type": ["string", "null"]},
+        "unit": {"enum": ["ms", "us", "MBps", "linesps", "MB", "pct", "fps"]},
+        "median": {"type": "number", "minimum": 0, "maximum": 1e308},
+        "p95": {"type": "number", "minimum": 0, "maximum": 1e308},
+        "stddev": {"type": "number", "minimum": 0, "maximum": 1e308},
+        "runs": {"type": "integer", "minimum": 1},
+        "outliers_removed": {"type": "integer", "minimum": 0},
+        "backend": {"type": "string", "minLength": 1},
+        "variant": {"type": "string", "minLength": 1},
+        "notes": {"type": "string", "minLength": 1},
+        "samples": {"type": "array", "minItems": 1, "items": {"type": "number", "minimum": 0, "maximum": 1e308}},
+        "measurement": {"$ref": "#/$defs/measurement"}
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {"metric": {"const": "render.throughput"}},
+            "required": ["metric"]
+          },
+          "then": {
+            "properties": {
+              "notes": {
+                "const": "Proxy only: measures producer-side PTY write completion; it does not observe terminal parsing, final-frame presentation, frame time, FPS, pixels presented, or complete rendering."
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {"metric": {"const": "scroll.proxy"}},
+            "required": ["metric"]
+          },
+          "then": {
+            "properties": {
+              "notes": {
+                "const": "Proxy only: measures producer-side PTY write completion for the scroll workload; it does not observe scroll, redraw, display events, frame time, FPS, pixels presented, or complete rendering."
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {"metric": {"const": "input.latency"}},
+            "required": ["metric"]
+          },
+          "then": {
+            "properties": {
+              "notes": {
+                "const": "Proxy only: measures a synthetic PTY echo round trip; it does not observe physical keypress, GUI input latency, screen response, keypress-to-display, or keypress-to-photon latency."
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {"metric": {"const": "fire.fps"}},
+            "required": ["metric"]
+          },
+          "then": {
+            "properties": {
+              "notes": {
+                "enum": [
+                  "Proxy only: measures producer-completed frames for a truecolor repaint stream at the cell geometry recorded by variant; throughput includes overlapped frame composition and PTY writing and does not observe terminal parsing, compositing, or confirmed on-screen frame presentation, so this fps is not a measured render frame rate.",
+                  "Proxy only: measures producer-side PTY write completion for a live window-sized truecolor repaint stream; it does not observe terminal parsing, compositing, or confirmed on-screen frame presentation, so this fps is a producer-side drain-rate proxy, not a measured render frame rate, and it scales inversely with window cell count so values are only comparable at matching window geometry."
+                ]
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

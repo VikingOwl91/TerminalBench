@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main, rust-migration]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Lint
+        run: make lint
+      - name: Unit tests
+        run: make unit
+      - name: Reporting Spec v1 suite
+        # Explicit controls stand in for what discovery can't provide on a
+        # headless runner (see README "Reporting Specification v1").
+        env:
+          TBENCH_TERMINAL_ID: "ci-terminal 1.0"
+          TBENCH_MACHINE_MODEL: "github-macos-runner"
+          TBENCH_POWER_SOURCE: ac
+          TBENCH_LOW_POWER_MODE: "false"
+          TBENCH_DISPLAY_REFRESH_HZ: "60"
+        run: make conformance

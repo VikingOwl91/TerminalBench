@@ -1,0 +1,4 @@
+metric: cmd.overhead
+unit: us
+description: "Command dispatch overhead: shell spawn + builtin `true` exec + exit"
+command: "{shell} -c true"

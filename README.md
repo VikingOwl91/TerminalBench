@@ -1,0 +1,583 @@
+# TerminalBench (tbench)
+
+Single-binary (Rust) benchmark runner for shell startup/dispatch latency
+and terminal-emulator draw/input/resource characteristics. Implementation of
+proposal recommendation C (`docs/proposal-terminal-bench.md`), MVP scope
+plus the extension-1 emulator metrics (§3 items 1-3), the extension-2
+`compare` subcommand (§6.4/§6.6), further emulator-focused metrics
+(CJK/emoji rendering, loaded-vs-idle input latency, resource footprint),
+the measurement-quality hardening from `docs/proposal-detailed-benchmark.md`
+§A (settle, concurrent-run detection, warmup/outlier filtering, environment
+metadata, adaptive `--runs auto`), the §E `orchestrate` subcommand for
+sequential multi-emulator runs, the §C synchronized-output probe, and the
+§F statistics (`--keep-samples`, bootstrap CI, Mann-Whitney significance).
+
+## Usage
+
+```sh
+# All scenarios, default shells (zsh,bash), 20 runs each
+bin/tbench run
+
+# One scenario only
+bin/tbench run --scenario shell-startup
+
+# Choose shells and trial count (shell-scoped scenarios only, see below)
+bin/tbench run --scenario shell-startup --shells zsh,bash --runs 5
+
+# Write JSON to a specific path (default: results/tbench-<timestamp>.json)
+bin/tbench run --output results/my-report.json
+
+# Record an explicit app/terminal identity instead of TERM_PROGRAM detection
+# (wins over the TBENCH_TERMINAL_ID environment override)
+bin/tbench run --app 'Ghostty nightly' --output results/ghostty-nightly.json
+
+# List available scenarios (name, metric, unit, scope, description)
+bin/tbench list
+
+# Human-readable recap of one report (default: newest results/tbench-*.json)
+bin/tbench show
+bin/tbench show results/my-report.json
+```
+
+Output is a single JSON document (see schema below) printed to stdout and
+also written under `results/` (gitignored); `run` also prints a `show`-style
+recap to stderr afterward, so stdout stays script-pipeable while a human
+still gets a readable summary. `list` and `show` are read-only (no
+results/.tbench.lock) and safe to run alongside an in-progress `run`.
+
+## Reporting Specification v1
+
+For claim-safe, vendor-neutral report exchange, see the normative
+[`docs/reporting-spec-v1.md`](docs/reporting-spec-v1.md) and its versioned
+Schema/validator. Validate both reports and run the eligibility gate before
+using the existing comparator:
+
+```sh
+set -e
+bin/tbench-validate validate results/a.json &&
+bin/tbench-validate validate results/b.json &&
+bin/tbench-validate compare results/a.json results/b.json &&  # must be COMPARABLE
+bin/tbench compare results/a.json results/b.json
+```
+
+The JSON Schema is a structural subset: passing it is necessary but is not
+sufficient for `CONFORMANT`, claim-safe, or `COMPARABLE`. The semantic rules
+and corpus in the specification remain authoritative. On CI and non-macOS
+hosts, controls that discovery cannot provide can be supplied explicitly:
+
+```sh
+TBENCH_TERMINAL_ID='ci-terminal 1.0' \
+TBENCH_MACHINE_MODEL='ci-runner-class-a' \
+TBENCH_POWER_SOURCE=ac \
+TBENCH_LOW_POWER_MODE=false \
+TBENCH_DISPLAY_REFRESH_HZ=60 \
+  bin/tbench run --output results/ci-report.json
+```
+
+## Measurement quality (settle, concurrency, warmup/outliers, adaptive runs)
+
+Real usage surfaced four ways the numbers themselves could be polluted;
+`run` now guards against each (`docs/proposal-detailed-benchmark.md` §A):
+
+- **Settle between scenarios and variants** (`--settle N`, default 2s):
+  `run` pauses `N` seconds between scenario files, and `render.throughput`
+  pauses between its `plain`/`ansi`/`cjk` variants and `input.latency`
+  between `idle`/`loaded`, so one variant's leftover load (a flood still
+  draining, a decaying CPU average) doesn't bleed into the next
+  measurement's first samples. `resource.mem`/`resource.cpu`'s `idle`
+  sampling specifically waits **at least 5s** regardless of `--settle`
+  (macOS's `ps %cpu` is a decayed running average — this is the fix for an
+  observed `resource.cpu[idle]` p95 of 243%, inherited from whatever ran
+  immediately before it).
+- **Concurrent-run detection**: `run` records its PID in
+  `results/.tbench.lock` and checks for one at startup. A live conflicting
+  run makes `tbench` warn and wait (polling, up to 120s) rather than start
+  measuring in parallel with it — two simultaneous full-suite runs were
+  observed to cross-pollute each other's `render.throughput` (70→13 MB/s).
+  `--force` skips the wait (with a visible warning: the risk doesn't go
+  away, it's just accepted). A lock whose PID is no longer running (a
+  stale lock, e.g. after a crash) is reclaimed automatically. This only
+  detects other `tbench` processes, not unrelated system load (a
+  concurrent Xcode build, Time Machine, etc.).
+- **Warmup + IQR outlier filtering**: `--warmup N` (default 3) discarded
+  trials run before timing starts, and samples more than 1.5×IQR outside
+  the interquartile range are dropped before computing median/p95/stddev.
+  The removed count is reported per result as `"outliers_removed"` (always
+  present, `0` when not applicable — `resource.*` and `fire.fps`).
+- **Adaptive sampling** (`--runs auto`, for `shell.startup`/`cmd.overhead`/
+  `render.throughput`/`scroll.proxy` only): instead of a fixed trial count,
+  collects in batches of 10 and stops once a bootstrap 95% CI on the median
+  is within 5% of the median, or 50 total trials are reached — noisier
+  metrics (e.g. `cmd.overhead`, whose fork/exec cost has high relative
+  variance) will often hit the 50-trial cap rather than converge early,
+  which is an expected, not a failed, outcome. `input.latency` and
+  `resource.*` don't support `auto` yet and fall back to a fixed default
+  with a stderr note.
+- **Failed-trial rejection**: non-zero child exits and commands exceeding
+  the 30-second per-trial safety limit are errors, never timing samples.
+- **Environment metadata** (macOS only, best-effort — omitted, not fatal,
+  on failure): `meta.power_source` (`pmset -g batt`), `meta.low_power_mode`,
+  `meta.machine_model`/`meta.cpu` (`sysctl`), and `meta.gpu`/
+  `meta.display_refresh_hz` (`system_profiler SPDisplaysDataType`, timed —
+  if it takes over 1s, those two fields are dropped and `meta.meta_notes`
+  explains why, so one slow machine doesn't tax every run).
+
+## Rendering fidelity probe (synchronized output)
+
+Every `run` sends a DECRQM query (`CSI ? 2026 $ p`) to the real terminal —
+asking whether it recognizes DECSET mode 2026, "synchronized output"
+(batch a frame instead of drawing it incrementally, so a terminal that
+supports it *can* avoid skipping/tearing frames) — and records the reply as
+`meta.synchronized_output_supported`: `"supported"`, `"unsupported"`
+(recognized the query but reported the mode as unset — rare), or
+`"no_reply"` (no controlling tty, or the terminal didn't answer within 1s —
+most terminals older than ~2023 fall here). This is **not** a frame-skip
+*detector* — it doesn't know whether any given `render.throughput`/
+`scroll.proxy` run actually skipped a frame, only whether the terminal
+*could* have avoided it. proposal §C considered a marker-line +
+screen-capture approach that would actually confirm the final rendered
+frame, but that needs the macOS screen-recording permission and adds OCR
+error risk for what proposal §C judged not to be worth it yet — this probe
+is the cheap, no-permission first step: whenever
+`synchronized_output_supported` isn't `"supported"`, `meta.frame_skip_risk_note`
+is added explaining that `render.throughput`/`scroll.proxy` numbers reflect
+PTY-write completion, not confirmed on-screen rendering.
+
+The probe writes to and reads from `/dev/tty` directly (raw mode, 1s
+timeout) — the terminal emulator itself answers automatically the instant
+it parses the query, so this needs a real controlling terminal but no user
+keystroke. Verified directly against Ghostty (`"supported"`) and against a
+real tty with nothing listening on the other end (`"no_reply"` after ~1s).
+
+## Comparing reports across terminal emulators
+
+Run `bin/tbench run` inside each terminal emulator you want to compare
+(each invocation writes its own JSON, tagged with that emulator's
+`meta.terminal` — pass `--app NAME` to set that tag explicitly, e.g. to
+distinguish two builds of the same emulator), then feed the resulting
+files to `compare` — or use
+`bin/tbench orchestrate` (below) to automate the "open each emulator, run
+tbench inside it, then compare" sequence instead of doing it by hand:
+
+```sh
+# Side-by-side Markdown table, 2 or more files
+bin/tbench compare results/ghostty.json results/iterm2.json results/terminal-app.json
+
+# Write the table to a file as well as stdout
+bin/tbench compare results/a.json results/b.json --output results/comparison.md
+
+# Self-contained HTML chart report (written to results/compare-<timestamp>.html
+# unless --output is given; never printed to stdout)
+bin/tbench compare results/a.json results/b.json --format html
+
+# CI regression gate: exactly 2 files (baseline, latest), exit non-zero on regression
+bin/tbench compare results/baseline.json results/latest.json --threshold 10%
+
+# Keep raw per-trial samples (opt-in — see "Statistical rigor" below) so
+# compare can add a bootstrap CI and a significance-aware regression check
+bin/tbench run --keep-samples --output results/baseline.json
+```
+
+Rows are `metric [variant] (shell) (unit)`; columns are each file's
+`meta.terminal` (disambiguated with the timestamp if two files share the
+same terminal name). Cells show the median, with the best value in a row
+**bolded** — direction-aware, since `render.throughput` is
+higher-is-better and every other metric is lower-is-better. A metric
+missing from a given file shows as `-` rather than dropping the row. A
+"Detail" table (p95/stddev, plus a bootstrap CI when `--keep-samples` data
+is present — see below) follows the main comparison.
+
+`--threshold` mode only accepts exactly 2 files (baseline, then latest) and
+exits `0` if nothing regressed past the threshold, or `3` with a
+regressions table listing metric/baseline/latest/% change if something did
+— suitable for a CI gate on dotfiles/config changes. `--threshold` works
+the same way regardless of `--format`.
+
+### Statistical rigor (`--keep-samples`, bootstrap CI, significance)
+
+By default `run` only keeps median/p95/stddev — the raw per-trial values
+are discarded once those are computed, keeping report size/shape exactly
+as before. `run --keep-samples` attaches each result's raw samples (in the
+result's own unit — the same values median/p95/stddev were computed from)
+as a `"samples"` array, opt-in specifically because it changes JSON size
+(20 trials ≈ 20 extra numbers per result).
+
+When `compare` finds `"samples"` on both files being compared for a
+metric, it (stdlib-only — no SciPy, matching the rest of the project's
+"no added dependencies" stance):
+
+- Computes a **bootstrap 95% CI on the median** (1000 resamples,
+  fixed-seed so the CI is reproducible from the same samples) and shows it
+  in the Markdown detail table, the HTML report's table view and tooltip,
+  and as a band in each per-metric chart. Without samples, the chart uses a
+  median→p95 whisker instead.
+- In `--threshold` mode, requires a **Mann-Whitney U test** (two-sided,
+  normal approximation with tie correction) to also report p<0.05 before
+  counting a threshold-exceeding row as an actual regression — a metric
+  that moved past the threshold but whose baseline/latest distributions
+  still overlap heavily (noise, not a real change) is reported but marked
+  "no" under Significant?/Regression?, and doesn't fail the run. Rows
+  where either file lacks samples for that metric fall back to the
+  original threshold-only check (unchanged behavior — this is fully
+  backward compatible with reports that never used `--keep-samples`).
+
+### Automated multi-emulator runs (`orchestrate`, macOS only)
+
+Manually opening each emulator and remembering to run them one at a time
+(never simultaneously — see the settle/lock-file section above) is exactly
+the kind of thing that gets skipped under time pressure, which is how the
+70→13 MB/s `render.throughput` cross-pollution that motivated the
+concurrent-run lock happened in the first place. `orchestrate` automates
+the whole sequence — launch, wait, next, then compare — so it can't happen:
+
+```sh
+bin/tbench orchestrate --apps Ghostty,iTerm,Terminal \
+  --scenario shell-startup --runs 20 \
+  --output-dir results/orchestrate-$(date +%Y%m%d) \
+  --format html
+```
+
+For each app in `--apps` (comma-separated), in order, `orchestrate`:
+
+1. Launches a **new window/instance** of that app running `tbench run`
+   (with `--scenario`/`--runs` passed through), via an app-specific adapter:
+   `open -na <App> --args -e <script>` for Ghostty; AppleScript
+   `do script`/`create window with default profile command` for
+   Terminal/iTerm. **The first `do script` triggers a one-time macOS
+   Automation permission prompt** for that app — accept it, since there's
+   no unattended way around a permission macOS itself gates.
+2. Waits (polling every 2s, `--timeout` seconds max, default 600) for that
+   app's JSON to appear — it never launches the next app until the current
+   one finishes, so two runs are never in flight at once. A timeout leaves
+   that app's window open (for manual inspection) and moves on to the next
+   app rather than aborting the whole batch.
+3. Once every app has been tried, runs `bin/tbench compare` over however
+   many JSON files were actually collected (`--format` is passed through)
+   and prints where the report went.
+
+An app that's already running when its turn comes up is **not quit** —
+`orchestrate` only warns that its existing windows may add load to the
+measurement, since silently closing a user's terminal session to get a
+cleaner benchmark would be a worse trade. An app name with no adapter
+(anything other than `ghostty`/`iterm`/`terminal`, case-insensitively) is
+skipped with a warning rather than falling back to generic UI-scripting
+automation, which is fragile and would need its own (separate)
+Accessibility permission grant for a result that isn't guaranteed to work;
+add a new adapter arm in `src/orchestrate.rs` (`dispatch`) to support
+another emulator.
+`orchestrate` itself is macOS-only — `open -na`/AppleScript have no
+portable Linux equivalent for "launch this GUI app and run a command in a
+new window."
+
+### HTML chart report (`--format html`)
+
+A single self-contained file — inline SVG + vanilla JS only, no external
+CDN/fonts/images — with one dot-and-interval chart per `metric`+variant+unit
+combination (never mixing units on one axis), grouped into sections in this
+order: Render Throughput, Latency, Resource, Shell. The report includes a
+**Wins per entity** tally, a **Results at a glance** table showing every
+entity's median and direction-aware competition rank for each metric (exact
+median ties share a rank: `1, 1, 3`), an **Overview vs baseline**, and the
+per-metric charts. Each chart:
+
+- plots every entity's (file's) median as a dot in that entity's fixed color
+  (same color for the same entity across every chart on the page — a legend
+  at the top names the mapping), labeled alongside its rank (`#N`)
+- marks every rank-1 dot in the row with a direction-aware **★ best** badge;
+  exact ties therefore mark every tied winner
+- shows a bootstrap 95% CI band on the median when `--keep-samples` data is
+  available; otherwise it shows a median→p95 whisker
+- shows a hover/keyboard-focus tooltip with rank/median/p95/stddev/runs
+
+The report is light-only by design and ends with the same median/p95/stddev
+table as the Markdown detail section, augmented with each entity's
+direction-aware competition rank, as an accessible non-chart fallback.
+Missing metric cells receive no rank.
+
+## Trend over time
+
+`compare` is snapshot-vs-snapshot; `trend` is `compare`'s longitudinal
+counterpart — it plots one metric's history across every `results/tbench-*.json`
+report you've accumulated, in chronological order (by `meta.timestamp`), so
+a terminal/shell's benchmark trajectory is visible without picking two files
+by hand:
+
+```sh
+# Default: every results/tbench-*.json report, sorted by meta.timestamp
+# (errors clearly if fewer than 2 are found)
+bin/tbench trend
+
+# Explicit files, Markdown to stdout (default format)
+bin/tbench trend results/a.json results/b.json results/c.json
+
+# Self-contained HTML line-chart report (written to results/trend-<timestamp>.html
+# unless --output is given; never printed to stdout)
+bin/tbench trend --format html --output results/trend.html
+```
+
+Each `results/tbench-*.json`'s `meta.terminal` is that report's series
+identity — if the accumulated reports span more than one terminal (e.g. you
+re-ran `tbench run` in Ghostty and again in iTerm over time), each terminal
+becomes its own colored line/table column rather than being averaged
+together. Markdown output is one table per `metric [variant] (shell) (unit)`
+row: timestamp, terminal, median, and a `Δ%` vs that terminal's previous
+point, annotated `(better)`/`(worse)` (direction-aware, same convention as
+`compare`). The HTML report is one small-multiple line chart per row
+(x = report index, y = median), zero-baselined by default — except a
+narrow-range series (all values within ~20% of each other) gets a
+non-zero, explicitly annotated baseline so the line isn't flattened to
+nothing — with a median→p95 whisker and a hover/focus tooltip per point. A
+report missing a metric breaks that terminal's line rather than
+interpolating across the gap.
+
+## Metrics
+
+Per-metric detail — exactly what each benchmark measures, how, and how far
+to trust it — lives in [`docs/benchmark-metrics.md`](docs/benchmark-metrics.md);
+this table and the sections below are the summary. `show` (and
+`run`'s recap) and `compare`'s Markdown/HTML outputs also append a one-line
+"Metric guide" for the metrics present in the report.
+
+| Metric | Unit | Shell-scoped? | Variants | What it measures |
+|---|---|---|---|---|
+| `shell.startup` | ms | yes | — | `{shell} -i -c exit` wall-clock time — interactive startup including rc files |
+| `cmd.overhead` | μs | yes | — | `{shell} -c true` wall-clock time — shell spawn + builtin dispatch |
+| `render.throughput` | MB/s, lines/s | no | `plain`, `ansi`, `cjk` | Producer-side completion rate for a fixed fixture written to the terminal |
+| `scroll.proxy` | ms | no | — | Proxy: wall-clock time until a large `cat` producer exits |
+| `input.latency` | ms | no | `idle`, `loaded` | PTY round trip: write a byte into a `cat` spawned on a fresh pty, time until it echoes back |
+| `resource.mem` | MB | no | `idle`, `load` | RSS of the terminal emulator's own GUI process |
+| `resource.cpu` | % | no | `idle`, `load` | %CPU of the terminal emulator's own GUI process |
+| `fire.fps` | fps | no | `<columns>x<rows>` | Producer-completed frames/second of the deterministic DOOM-fire stream at the recorded region |
+
+Each metric runs N trials (default 20, `--runs`) and reports median, stddev,
+and p95. `resource.mem`/`resource.cpu` instead take up to 5 point-in-time
+`ps` samples per variant (fewer if `--runs` < 5, since sampling a live
+process 20 times isn't meaningfully different from 5). `fire.fps` is
+duration-based rather than iteration-based: each trial runs `FIRE_SECS`
+wall-clock seconds (env var, default 5; finite range 0.1–60), and the trial count used is
+`min(--runs, 5)` for the same reason `resource.*` caps its sample count —
+running it a full 20 times by default would make the suite's total
+wall-clock unreasonably long.
+
+**Shell-scoped vs. not**: `shell.startup`/`cmd.overhead` run once per entry
+in `--shells` and report `"shell"` accordingly. `render.throughput`,
+`scroll.proxy`, `input.latency`, and `fire.fps` measure the terminal
+emulator itself, not any particular shell, so they ignore `--shells`, run
+once, and report `"shell": null`.
+
+### Comparing terminal emulators
+
+`render.throughput`/`scroll.proxy`/`input.latency` results are only
+meaningful in the context of the emulator they ran in. Each report's
+`meta.terminal` field (from `$TERM_PROGRAM`/`$TERM_PROGRAM_VERSION`, falling
+back to `$TERM`) identifies that emulator — to compare emulators, run
+`bin/tbench run` inside each one and diff the resulting JSON files by
+`meta.terminal`.
+
+### `render.throughput` variants: plain / ansi / cjk
+
+`cjk` mixes full-width Japanese text and emoji into the same line count as
+`plain`/`ansi`. Because UTF-8 encodes those characters as 3-4 bytes each
+(vs. 1 for ASCII), **`cjk`'s MB/s is not a fair byte-for-byte comparison**
+against `plain`/`ansi` — the same visual width costs more bytes. Use
+`linesps` (or a cells/s metric you compute yourself: multiply CJK/emoji
+runs by roughly 2 for their double-width terminal columns) for a more
+apples-to-apples pace comparison across variants.
+
+### `input.latency` variants: idle / loaded
+
+`loaded` runs the same PTY round-trip measurement as `idle`, but with a
+`render.throughput`-style flood (the `plain` fixture) streaming to the
+terminal concurrently in the background, to see how much terminal I/O
+contention degrades echo latency and, especially, its **jitter (p95)**. If
+the flood cannot start, no `loaded` row is emitted; the run never relabels
+an idle measurement as loaded. Flood cleanup is handled by the integrated
+child-process helper in `src/measure.rs`.
+
+### `fire.fps`: DOOM-fire IO stress
+
+Runs the integrated DOOM-fire workload (`src/fire.rs` — a faithful Rust
+port of the retired vendored C tool, with identical palette, seed, frame
+order, and byte stream), which repaints a truecolor half-block region every frame at the
+live window size (`full` mode — upstream DOOM-fire-zig's full-window
+condition). fps scales ~1/cell-count. The region actually rendered is
+recorded as the result's `<columns>x<rows>` variant and workload identity,
+so reports at differing geometries do not align as the same result. Without
+a controlling tty the metric is skipped. Like
+`render.throughput`, its `write()` blocks on pty flow control, so
+frames/second approximates the terminal's drain rate, not a confirmed
+on-screen frame rate — see the proxy caveats below. No C compiler is
+needed anymore.
+
+The workload uses an overlapped producer (`fire-v2-overlapped`, recorded
+in the report row's `backend` field): a writer thread drains frame N into
+the pty while the main thread composes frame N+1, hiding compose time
+behind the drain; throughput remains limited by whichever of composition
+or PTY writing is slower. The byte stream and
+producer design are identical to the C tool, so fps from the two is
+directly comparable; the retired serial (v1) producer's numbers are not —
+check `backend` before comparing `fire.fps` values across reports.
+
+### `resource.mem` / `resource.cpu`: which process, and macOS `%cpu` caveat
+
+These target the **terminal emulator's own GUI process**, not the shell or
+`tbench` itself. It's found by walking the process ancestry from `tbench`
+upward to the first executable living inside a macOS `.app` bundle
+(`.../Contents/MacOS/<bin>`). If none is found — inside `tmux`, over SSH, or
+on non-macOS — the scenario is **skipped with a stderr warning** rather
+than misattributing resource usage to the wrong process.
+
+macOS's `ps -o %cpu` is a **decayed running average**, not an instantaneous
+sample. `tbench` mitigates this by taking several samples per variant and
+reporting the median, but that's a mitigation, not a fix — treat
+`resource.cpu` as directional, not a precise instant-CPU reading.
+
+### Proxy/approximate metrics — read before trusting the numbers
+
+- `scroll.proxy` has **no native scroll or redraw-event API** behind it. It
+  is literally the wall-clock time for a large `cat` producer to finish
+  writing — it does not observe terminal settling and is not a true redraw-event
+  measurement (proposal §3 item 3).
+- `input.latency` measures a **pseudo-terminal round trip** (write a byte
+  into a `cat` spawned on a fresh pty, time until it's read back), not real
+  keypress-to-screen-photon latency. True input latency needs GUI
+  automation, which is out of scope (proposal §6.6 extension 3). It also
+  requires opening a pty; if none is available (e.g. some sandboxed/CI
+  environments) the scenario is skipped with a stderr warning rather than
+  failing the whole run. A timeout or missing echo invalidates the variant;
+  the PTY line discipline itself may provide the observed echo.
+- `render.throughput`/`scroll.proxy`/`fire.fps` need a controlling terminal
+  (`/dev/tty`) to measure the registered PTY workload. Without one
+  (non-interactive/CI contexts), those metrics are skipped; no `/dev/null`
+  substitute is reported under the same profile.
+- `render.throughput` and `scroll.proxy` time the complete `cat` process,
+  including process creation and fixture reads; page-cache state is therefore
+  part of these producer-side proxy results.
+- `fire.fps` reports frames/second, but — like `render.throughput` — it is
+  a producer-side PTY-write-completion proxy, not a confirmed on-screen
+  frame rate; see the caveat above.
+- `resource.mem`/`resource.cpu` are unavailable outside a directly-launched
+  macOS terminal emulator (see caveat above).
+
+Every result carries these caveats inline via an optional `"notes"` field
+in the JSON (see schema below) so they travel with the data.
+
+## Backend and precision
+
+Process-timed metrics use a built-in monotonic timer (`std::time::Instant` —
+no fork per sample), with warmup (default 3 discarded trials) and 1.5×IQR
+outlier rejection, reported as backend `"rust-timer"`. This replaces both
+the previous zsh `EPOCHREALTIME` timer and the optional hyperfine
+dependency — warmup + outlier handling, hyperfine's main advantages over
+the old fallback, are now built in.
+
+Each result object includes a `"backend"` field (`"rust-timer"`,
+`"rust-pty"` for `input.latency`, `"ps"` for `resource.*`,
+`"fire-v2-overlapped"` for `fire.fps`) so reports are traceable to the
+backend that produced them. Reports from the earlier backends
+(`hyperfine`, `zsh-timer`, `zsh-zpty`) remain conformant under Reporting
+Spec v1; as always, the pairwise gate treats differing backends as
+NOT_COMPARABLE, so compare like with like.
+
+## Development
+
+```sh
+make help         # list targets
+make build        # release build (bin/tbench also builds on demand)
+make test         # cargo unit tests + tests/report-v1.sh (Reporting Spec v1 suite)
+make lint         # rustfmt --check + clippy -D warnings
+make check        # lint + test — what CI runs
+```
+
+CI (`.github/workflows/ci.yml`) runs `make lint`, `make unit`, and the
+conformance suite on a macOS runner with the explicit `TBENCH_*` controls
+from the section above.
+
+## Requirements
+
+- A Rust toolchain to build (`cargo build --release`); the result is one
+  self-contained binary with no runtime dependencies
+- the shells being benchmarked (`zsh`/`bash`/... ) on `PATH`
+- a controlling terminal, for `render.throughput`/`scroll.proxy`/
+  `fire.fps`, and a usable pty, for `input.latency` — unavailable metrics
+  are skipped with an actionable warning rather than replaced by a
+  different workload
+
+No runtime dependencies: hyperfine, python3, and a C compiler are no
+longer needed (`compare`/`show`/`trend`/`validate` are built in, and the
+DOOM-fire workload is an integrated port of the retired C tool with an
+identical byte stream). YAML scenario files keep the fixed flat
+`key: value` structure, parsed by the built-in reader. Fixtures for
+`render.throughput`/`scroll.proxy` are generated lazily on first use
+(same content as the retired `fixtures/gen-fixtures.sh`) and gitignored.
+
+## Directory layout
+
+```
+bin/tbench           # thin launcher: builds (if needed) and execs the Rust binary
+bin/tbench-validate  # thin launcher for `tbench validate` (Reporting Spec v1 CLI)
+src/main.rs          # CLI dispatch (run/list/show/compare/trend/orchestrate/validate)
+src/stats.rs         # median/p95/stddev, IQR, bootstrap CI, Mann-Whitney
+src/measure.rs       # rust-timer backend, adaptive sampling, output flood
+src/scenario.rs      # scenarios/*.yaml loading (flat key: value reader)
+src/runner.rs        # scenario kind dispatch, fixtures, pty latency
+src/lock.rs          # results/.tbench.lock concurrent-run detection
+src/resource.rs      # terminal-PID discovery, resource.mem/resource.cpu
+src/fidelity.rs      # DECSET 2026 synchronized-output probe
+src/fire.rs          # integrated DOOM-fire workload (port of the retired C tool)
+src/report.rs        # Reporting Spec v1 JSON assembly + env metadata
+src/show.rs / compare.rs / trend.rs   # report views (recap, tables/HTML, history)
+src/orchestrate.rs   # per-app launch adapters (macOS)
+src/validate.rs      # Reporting Spec v1 reference validator
+scenarios/           # *.yaml scenario definitions
+schemas/             # tbench-report-v1.schema.json (Reporting Spec v1)
+tests/report-v1.sh   # Reporting Spec v1 conformance suite (make conformance)
+docs/                # proposals, metric guide, reporting spec
+fixtures/            # generated *.txt (gitignored) + conformance/ corpus
+results/             # JSON/HTML output + .tbench.lock (gitignored)
+```
+
+## JSON report format
+
+The normative format is defined by the
+[`Reporting Specification v1`](docs/reporting-spec-v1.md). Use the
+[`JSON Schema`](schemas/tbench-report-v1.schema.json) for structural checks
+and the [`valid minimal fixture`](fixtures/conformance/v1/valid-minimal.json)
+as a non-normative illustration. A Schema-only pass does not establish
+semantic conformance, claim safety, or pairwise comparability; use
+`bin/tbench-validate` and the versioned corpus for those decisions.
+
+## Known limitations
+
+- `bin/tbench run` still only emits JSON (no Markdown report from `run`
+  itself — `compare` produces Markdown/HTML from existing JSON files); no
+  fish shell support; no `prompt.render` metric — deferred to later phases
+  (proposal §6.6 extension 2/3).
+- `--runs auto` only converges for `shell.startup`/`cmd.overhead`/
+  `render.throughput`/`scroll.proxy`; `input.latency`/`resource.*`/
+  `fire.fps` fall back to a fixed trial count with a stderr note.
+- The concurrent-run lock only detects other `tbench run` processes, not
+  unrelated system load (a build, backups, etc.) — see caveat above.
+- `orchestrate` is macOS-only, supports `ghostty`/`iterm`/`terminal` only
+  (see above for adding an adapter), and can't guarantee the new window
+  actually has keyboard/tty focus — that's an emulator implementation
+  detail, and an unfocused window could skew `render.throughput` etc.
+- The DECSET 2026 probe only reports whether the terminal *recognizes*
+  synchronized output — it does not confirm any given run actually
+  avoided frame skipping (that would need screen-capture + a permission
+  grant, judged not worth it yet per proposal §C).
+- `--keep-samples`/bootstrap CI/Mann-Whitney significance all require both
+  files being compared to carry `"samples"` for the same metric; without
+  that, `compare` falls back to the original median/p95/stddev-only,
+  threshold-only behavior — fully backward compatible with reports from
+  before this feature existed.
+- `scroll.proxy` and `input.latency` are approximations, not true
+  redraw-event / photon-latency measurements — see caveats above.
+- `render.throughput`'s `cjk` variant's MB/s isn't directly comparable to
+  `plain`/`ansi`'s (different bytes-per-character) — see caveat above.
+- `resource.mem`/`resource.cpu` only work when `tbench` runs inside a
+  directly-launched macOS terminal emulator (not tmux/SSH/non-macOS), and
+  `resource.cpu` inherits macOS's decayed-average `%cpu` semantics.
+- `fire.fps`'s `--runs` is duration-based (`FIRE_SECS`, finite range
+  0.1–60 seconds per trial) and capped at 5 trials regardless of `--runs`, unlike the
+  iteration-based scenarios.
