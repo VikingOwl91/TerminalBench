@@ -129,7 +129,10 @@ pass "runtime-generated report validates across every known profile"
 
 # Darwin with every optional metadata value absent: the legacy TERM stays
 # descriptive, but v1 must not infer an emulator identity from it.
-env -u TERM_PROGRAM -u TERM_PROGRAM_VERSION TERM=screen-256color \
+env -u TBENCH_TERMINAL_ID -u TBENCH_MACHINE_MODEL \
+  -u TBENCH_POWER_SOURCE -u TBENCH_LOW_POWER_MODE \
+  -u TBENCH_DISPLAY_REFRESH_HZ \
+  -u TERM_PROGRAM -u TERM_PROGRAM_VERSION TERM=screen-256color \
   TBENCH_TEST_SYNC_OUTPUT=no_reply TBENCH_TEST_DISABLE_MACOS_META=1 \
   "$TBENCH" __smoke-report >"$TMP/empty-meta.json"
 "$VALIDATOR" validate "$TMP/empty-meta.json" >/dev/null
