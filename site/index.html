@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TerminalBench — Claim-Safe Terminal Emulator Benchmarks</title>
+    <meta name="description" content="TerminalBench is a CLI and reporting protocol for terminal-emulator performance—not the AI-agent benchmark. Generate, validate, check eligibility, then compare.">
+    <meta name="robots" content="index,follow,max-image-preview:large">
+    <meta name="theme-color" content="#f3eee2" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#181815" media="(prefers-color-scheme: dark)">
+    <link rel="canonical" href="https://simota.github.io/TerminalBench/">
+    <link rel="alternate" hreflang="en" href="https://simota.github.io/TerminalBench/">
+    <link rel="alternate" hreflang="ja" href="https://simota.github.io/TerminalBench/ja/">
+    <link rel="alternate" hreflang="x-default" href="https://simota.github.io/TerminalBench/">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="styles.css">
+
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://simota.github.io/TerminalBench/">
+    <meta property="og:site_name" content="TerminalBench">
+    <meta property="og:title" content="TerminalBench — Claim-Safe Terminal Emulator Benchmarks">
+    <meta property="og:description" content="A terminal-emulator performance CLI and reporting protocol. Generate reports, validate claims, check pairwise eligibility, then compare.">
+    <meta property="og:image" content="https://simota.github.io/TerminalBench/og.png">
+    <meta property="og:image:secure_url" content="https://simota.github.io/TerminalBench/og.png">
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="TerminalBench terminal-emulator performance protocol: generate and validate reports, check pairwise eligibility, then compare.">
+    <meta property="og:locale" content="en_US">
+    <meta property="og:locale:alternate" content="ja_JP">
+
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:url" content="https://simota.github.io/TerminalBench/">
+    <meta name="twitter:title" content="TerminalBench — Claim-Safe Terminal Emulator Benchmarks">
+    <meta name="twitter:description" content="Terminal-emulator performance reports with claim validation and pairwise eligibility before comparison.">
+    <meta name="twitter:image" content="https://simota.github.io/TerminalBench/og.png">
+    <meta name="twitter:image:alt" content="TerminalBench terminal-emulator performance protocol workflow.">
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "@id": "https://simota.github.io/TerminalBench/#software",
+        "name": "TerminalBench",
+        "alternateName": "tbench",
+        "inLanguage": "en",
+        "url": "https://simota.github.io/TerminalBench/",
+        "sameAs": ["https://github.com/simota/TerminalBench"],
+        "applicationCategory": "DeveloperApplication",
+        "applicationSubCategory": "Terminal emulator performance reporting",
+        "description": "A CLI and reporting protocol for terminal-emulator performance that generates versioned reports, validates claim boundaries, checks pairwise eligibility, and then compares eligible results.",
+        "disambiguatingDescription": "TerminalBench evaluates terminal-emulator and shell performance reports; it is not the AI-agent benchmark named Terminal-Bench.",
+        "softwareRequirements": "A Rust toolchain (cargo) to build the single self-contained binary on first use; the shells being benchmarked. Validation, eligibility, and value comparison are built into the same binary.",
+        "featureList": [
+          "Versioned JSON performance reports",
+          "Semantic claim-boundary validation",
+          "Pairwise eligibility outcomes: COMPARABLE, NOT_COMPARABLE, and UNDETERMINED",
+          "Self-contained HTML comparison reports with a baseline-relative overview, Results at a glance medians and direction-aware competition ranks (exact ties share a rank), per-metric dot-and-interval charts, and a win tally",
+          "Longitudinal trend reports across report history"
+        ]
+      }
+    </script>
+    <script src="script.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#quickstart">Skip to quickstart</a>
+
+    <header class="site-header">
+      <div class="shell header-inner">
+        <a class="brand" href="https://github.com/simota/TerminalBench" aria-label="TerminalBench repository">
+          <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
+            <rect x="4.25" y="8.25" width="9.5" height="9.5" rx="2.25"/>
+            <rect x="4.25" y="30.25" width="9.5" height="9.5" rx="2.25"/>
+            <path d="M15 13h4l8 11-8 11h-4M27 24h16"/>
+            <path class="brand-gate" d="M27 16v16"/>
+          </svg>
+          <span>TerminalBench</span>
+        </a>
+        <p class="category"><span class="category-label">Terminal-emulator performance protocol · </span><a href="ja/" hreflang="ja" lang="ja">日本語</a></p>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero shell" data-purpose="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">Reporting specification v1 · Release workflow</p>
+          <h1 id="hero-title">Make terminal performance a claim-safe release artifact.</h1>
+          <p class="hero-lead">Run versioned JSON benchmarks, validate their claims, and check pairwise eligibility before you compare.</p>
+          <a class="cta" href="#quickstart">Try TerminalBench <span aria-hidden="true">↓</span></a>
+          <p class="boundary-note"><span aria-hidden="true">⊘</span> Records process and PTY observation boundaries—not pixels on screen or physical keypress-to-photon latency.</p>
+          <div class="first-command" aria-labelledby="hero-command-label">
+            <p class="code-label" id="hero-command-label">First command</p>
+            <div class="code-control">
+              <pre tabindex="0" aria-labelledby="hero-command-label"><code id="hero-command">bin/tbench run --output results/report-a.json</code></pre>
+              <button class="copy-button" type="button" data-copy-target="hero-command" data-status-target="hero-copy-status" data-copy-success="Command copied" data-copy-failure="Couldn’t copy the command. Select it and copy it manually.">Copy command</button>
+            </div>
+            <p class="copy-status" id="hero-copy-status" role="status" aria-live="polite"></p>
+          </div>
+        </div>
+
+        <article class="hero-artifact" data-enter aria-labelledby="artifact-title">
+          <div class="artifact-heading">
+            <p class="code-label" id="artifact-title">Registered measurement · profile v1.0.0</p>
+            <span class="artifact-state"><span aria-hidden="true">◇</span> Claim-bound excerpt</span>
+          </div>
+          <pre><code>{
+  <span class="key">"classification"</span>: <span class="value">"proxy"</span>,
+  <span class="key">"scope"</span>: <span class="value">"pty-output-pipeline"</span>,
+  <span class="key">"observed_boundary"</span>:
+    <span class="value">"fixture-write-start-to-producer-exit"</span>,
+  <span class="key">"limitations"</span>: [
+    <span class="value">"Measures producer-side PTY write completion; terminal parsing, final-frame presentation, and frame skipping are not observed."</span>
+  ],
+  <span class="key">"excluded_claims"</span>: [
+    <span class="refusal">"On-screen rendering throughput"</span>
+  ]
+}</code></pre>
+          <p class="artifact-caption">A registered measurement excerpt carries its observation boundary and excluded claim.</p>
+        </article>
+      </section>
+
+      <section class="premise section shell" data-purpose="workflow-introduction" aria-labelledby="premise-title">
+        <p class="section-index" aria-hidden="true">01 / THE PREMISE</p>
+        <div>
+          <h2 id="premise-title">A benchmark becomes useful when its claims survive the gate.</h2>
+          <p class="lead">TerminalBench records each run as versioned JSON. The validator checks what every metric may claim. The eligibility gate then decides whether two reports can proceed to comparison.</p>
+        </div>
+      </section>
+
+      <section class="workflow section" data-purpose="safe-sequence" aria-labelledby="workflow-title">
+        <div class="shell">
+          <p class="eyebrow">The safe sequence</p>
+          <h2 id="workflow-title">Run. Validate. Check eligibility. Then compare.</h2>
+          <ol class="workflow-list">
+            <li>
+              <p class="step-number">01 / Run</p>
+              <h3>Record the observation</h3>
+              <p>Run TerminalBench inside each terminal emulator. Each report carries its environment, method, observation boundary, limitations, and excluded claims.</p>
+              <pre><code>bin/tbench run --output results/report-a.json</code></pre>
+            </li>
+            <li>
+              <p class="step-number">02 / Validate</p>
+              <h3>Reject unsafe reports</h3>
+              <p>Validate both JSON files. Structure alone is not enough: semantic checks enforce registered profiles, numeric invariants, and claim boundaries.</p>
+              <pre><code>bin/tbench-validate validate results/report-a.json
+bin/tbench-validate validate results/report-b.json</code></pre>
+            </li>
+            <li>
+              <p class="step-number">03 / Eligibility</p>
+              <h3>Decide whether the pair may proceed</h3>
+              <p>The pairwise gate checks measurement identity, workload identity, and required known controls. It returns one of three decisions. Unknown is never a wildcard.</p>
+              <pre><code>bin/tbench-validate compare results/report-a.json results/report-b.json</code></pre>
+            </li>
+            <li>
+              <p class="step-number">04 / Compare</p>
+              <h3>Present values only after COMPARABLE</h3>
+              <p>The comparator presents the values as a Markdown table or, with <code>--format html</code>, a self-contained chart report: a baseline-relative overview (<code>--baseline</code> picks the reference), a Results at a glance table of medians and direction-aware competition ranks (exact ties share a rank), per-metric dot-and-interval charts (bootstrap 95% CI with samples; median-to-p95 whisker otherwise), and a win tally. It does not replace validation or the eligibility decision.</p>
+              <pre><code>bin/tbench compare results/report-a.json results/report-b.json --format html</code></pre>
+            </li>
+          </ol>
+          <p class="sequence-stop"><span aria-hidden="true">■</span> Stop before the final command on NOT_COMPARABLE or UNDETERMINED.</p>
+        </div>
+      </section>
+
+      <section class="quickstart section shell" id="quickstart" tabindex="-1" data-purpose="quickstart" aria-labelledby="quickstart-heading">
+        <p class="eyebrow">Quickstart</p>
+        <h2 id="quickstart-heading" tabindex="-1">Create the first report.</h2>
+        <p class="setup-note">First, clone or open the <a href="https://github.com/simota/TerminalBench">TerminalBench repository</a> and enter its repository root.</p>
+        <p class="lead" id="quick-command-label">From the repository root, run:</p>
+        <div class="quick-command code-control" aria-labelledby="quick-command-label">
+          <pre tabindex="0" aria-labelledby="quick-command-label"><code id="quick-command">bin/tbench run --output results/report-a.json</code></pre>
+          <button class="copy-button copy-button-inverse" type="button" data-copy-target="quick-command" data-status-target="quick-copy-status" data-copy-success="Command copied" data-copy-failure="Couldn’t copy the command. Select it and copy it manually.">Copy command</button>
+        </div>
+        <p class="copy-status" id="quick-copy-status" role="status" aria-live="polite"></p>
+        <p class="prerequisite">The runner is a single self-contained Rust binary; bin/tbench builds it on first use, so a Rust toolchain (cargo) is needed only to build. Validation, eligibility, and value comparison are built into the same binary. A controlling terminal is required for terminal-facing measurements; unsupported contexts warn, skip, or degrade as documented.</p>
+        <details class="safe-sequence">
+          <summary id="safe-sequence-label">Show the complete safe comparison sequence</summary>
+          <pre tabindex="0" aria-labelledby="safe-sequence-label"><code>set -e
+
+# Run once inside each terminal emulator.
+bin/tbench run --output results/report-a.json &amp;&amp;
+bin/tbench run --output results/report-b.json &amp;&amp;
+
+# Validate both reports, then require COMPARABLE.
+bin/tbench-validate validate results/report-a.json &amp;&amp;
+bin/tbench-validate validate results/report-b.json &amp;&amp;
+bin/tbench-validate compare results/report-a.json results/report-b.json &amp;&amp;
+
+# Present values only after the gate exits 0.
+bin/tbench compare results/report-a.json results/report-b.json</code></pre>
+          <p>Stop on NOT_COMPARABLE (exit 7) or UNDETERMINED (exit 8).</p>
+        </details>
+      </section>
+
+      <section class="eligibility section shell" data-purpose="eligibility-proof" aria-labelledby="eligibility-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Pairwise eligibility</p>
+            <h2 id="eligibility-title">Three decisions. No guessed equivalence.</h2>
+          </div>
+          <p class="lead">The gate decides permission to compare. It does not compute a winner.</p>
+        </div>
+        <div class="verdicts">
+          <article class="verdict verdict-comparable">
+            <div class="verdict-header"><span class="verdict-glyph" aria-hidden="true">●</span><h3>COMPARABLE</h3><span>Exit 0</span></div>
+            <p>Both reports are conformant, and their required known controls and measurement contracts satisfy the v1 pairwise rules.</p>
+          </article>
+          <article class="verdict verdict-not-comparable">
+            <div class="verdict-header"><span class="verdict-glyph" aria-hidden="true">■</span><h3>NOT_COMPARABLE</h3><span>Exit 7</span></div>
+            <p>A known mismatch blocks comparison. Keep the reason with the reports and do not present a winner.</p>
+          </article>
+          <article class="verdict verdict-undetermined">
+            <div class="verdict-header"><span class="verdict-glyph" aria-hidden="true">△</span><h3>UNDETERMINED</h3><span>Exit 8</span></div>
+            <p>A decisive fact or workload identity is unknown. Collect the missing context; unknown never means “same.”</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="claim-proof section" data-purpose="claim-boundary-proof" aria-labelledby="claim-title">
+        <div class="shell">
+          <p class="eyebrow">Claim boundary</p>
+          <h2 id="claim-title">The report carries the boundary. The validator enforces it.</h2>
+          <div class="claim-columns">
+            <article>
+              <p class="claim-label claim-allowed"><span aria-hidden="true">●</span> What the report may say</p>
+              <p>For render throughput, the registered proxy observes fixture write start through producer exit. The report carries that scope, its limitations, and the claim it excludes.</p>
+              <pre><code>{
+  "classification": "proxy",
+  "scope": "pty-output-pipeline",
+  "observed_boundary":
+    "fixture-write-start-to-producer-exit",
+  "excluded_claims": [
+    "On-screen rendering throughput"
+  ]
+}</code></pre>
+            </article>
+            <article>
+              <p class="claim-label claim-refused"><span aria-hidden="true">■</span> What the validator refuses</p>
+              <p>Relabeling the same proxy as direct screen presentation fails closed with a stable rule ID, a JSON Pointer, expected and actual values, and a remediation.</p>
+              <pre><code>{
+  "rule_id": "TBV-CLAIM-BOUNDARY",
+  "pointer": "/results/0/measurement/observed_boundary",
+  "expected": "fixture-write-start-to-producer-exit",
+  "actual": "final-frame-presented-to-display",
+  "remediation": "Copy the immutable profile field exactly;
+    choose a different profile for different semantics."
+}</code></pre>
+            </article>
+          </div>
+          <p class="contrast-caption">The schema checks structure. The semantic validator decides conformance and claim safety.</p>
+        </div>
+      </section>
+
+      <section class="exits section shell" data-purpose="exit-code-reference" aria-labelledby="exits-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Stable process outcomes</p>
+            <h2 id="exits-title">Every stop has an explicit exit.</h2>
+          </div>
+          <p class="lead">Use the exit status to stop automation before an unsupported comparison reaches presentation.</p>
+        </div>
+        <div class="table-wrap" tabindex="0" role="region" aria-label="TerminalBench exit codes">
+          <table>
+            <thead><tr><th scope="col">Exit</th><th scope="col">Visible meaning</th></tr></thead>
+            <tbody>
+              <tr><th scope="row"><code>0</code></th><td>Conformant or COMPARABLE</td></tr>
+              <tr><th scope="row"><code>2</code></th><td>Usage error</td></tr>
+              <tr><th scope="row"><code>3</code></th><td>I/O, UTF-8, strict JSON, or duplicate-key error</td></tr>
+              <tr><th scope="row"><code>4</code></th><td>Conformance or claim-safety failure</td></tr>
+              <tr><th scope="row"><code>5</code></th><td>Unsupported wire version</td></tr>
+              <tr><th scope="row"><code>6</code></th><td>Unsupported profile ID or version</td></tr>
+              <tr><th scope="row"><code>7</code></th><td>NOT_COMPARABLE</td></tr>
+              <tr><th scope="row"><code>8</code></th><td>UNDETERMINED</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="boundaries section" data-purpose="trust-boundaries" aria-labelledby="boundaries-title">
+        <div class="shell">
+          <p class="eyebrow">What v1 does—and does not—establish</p>
+          <h2 id="boundaries-title">Conformance is specific. Trust stays bounded.</h2>
+          <div class="boundary-columns">
+            <article>
+              <h3>Established by a conformant v1 report</h3>
+              <ul class="evidence-list evidence-established">
+                <li>The report follows the required wire structure.</li>
+                <li>Its metric profiles carry registered methods, scopes, limitations, and exclusions.</li>
+                <li>The semantic validator accepts its invariants and claim boundaries.</li>
+              </ul>
+            </article>
+            <article>
+              <h3>Not established by that report</h3>
+              <ul class="evidence-list evidence-not-established">
+                <li>Absolute measurement accuracy</li>
+                <li>On-screen rendering or frame presentation</li>
+                <li>Physical keypress-to-photon latency</li>
+                <li>Reproducibility across every machine or environment</li>
+                <li>Independent neutrality, external adoption, or market leadership</li>
+                <li>Pairwise comparability before the eligibility gate returns COMPARABLE</li>
+              </ul>
+            </article>
+          </div>
+          <p class="leaderboard-note">TerminalBench is a reporting and comparability protocol, not a fastest-terminal leaderboard.</p>
+        </div>
+      </section>
+
+      <section class="faq section shell" data-purpose="faq" aria-labelledby="faq-title">
+        <p class="eyebrow">FAQ</p>
+        <h2 id="faq-title">Questions to settle before the first run.</h2>
+        <div class="faq-list">
+          <details><summary>What does TerminalBench measure?</summary><p>It records shell process timings and terminal-emulator proxy or sampled observations for PTY output, synthetic PTY echo, and process resources. Every v1 metric names its method, scope, observed boundary, limitations, and excluded claims.</p></details>
+          <details><summary>Does it measure what appears on screen?</summary><p>No. Producer-side PTY completion does not observe terminal parsing, final-frame presentation, pixels, or frame skipping. The render and scroll profiles exclude on-screen claims.</p></details>
+          <details><summary>Does input.latency measure a physical keypress?</summary><p>No. It measures a synthetic PTY echo round trip. It excludes the keyboard, GUI event routing, rendering, display presentation, and physical keypress-to-photon latency.</p></details>
+          <details><summary>Can I compare any two reports?</summary><p>No. Validate both reports, then run the pairwise eligibility gate. Compare values only after it returns COMPARABLE. A known mismatch returns NOT_COMPARABLE; missing decisive context returns UNDETERMINED.</p></details>
+          <details><summary>Is this a fastest-terminal ranking?</summary><p>No. The protocol records bounded observations and decides pairwise eligibility. It does not operate a leaderboard or certify a universal winner.</p></details>
+          <details><summary>What happens when the environment is incomplete?</summary><p>Reports record required facts as known or unknown. If a decisive fact remains unknown and no known mismatch already blocks the pair, eligibility is UNDETERMINED. CI can provide documented stable controls when platform discovery cannot.</p></details>
+          <details><summary>What does the first run require?</summary><p>A Rust toolchain (cargo), used once to build the single self-contained binary — after that there are no runtime dependencies. Terminal-facing scenarios need a controlling terminal, and input latency needs a usable PTY.</p></details>
+          <details><summary>Is this the AI-agent benchmark named Terminal-Bench?</summary><p>No. This project is a terminal-emulator performance reporting and comparability protocol.</p></details>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-inner">
+        <div>
+          <p class="footer-brand">TerminalBench</p>
+          <p>Terminal-emulator performance reporting and comparability protocol</p>
+        </div>
+        <nav aria-label="Project references">
+          <a href="https://github.com/simota/TerminalBench">Repository</a>
+          <a href="https://github.com/simota/TerminalBench/blob/main/docs/reporting-spec-v1.md">Reporting specification v1</a>
+        </nav>
+        <p class="footer-boundary">Versioned evidence before comparison. No leaderboard.</p>
+      </div>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,338 @@
+<!doctype html>
+<html lang="ja" dir="ltr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TerminalBench — 主張の安全性を守るターミナルエミュレーターベンチマーク</title>
+    <meta name="description" content="TerminalBenchは、ターミナルエミュレーター性能のためのCLIとレポートプロトコルです。AIエージェントのベンチマークではありません。生成、検証、適格性確認を経てから比較します。">
+    <meta name="robots" content="index,follow,max-image-preview:large">
+    <meta name="theme-color" content="#f3eee2" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#181815" media="(prefers-color-scheme: dark)">
+    <link rel="canonical" href="https://simota.github.io/TerminalBench/ja/">
+    <link rel="alternate" hreflang="en" href="https://simota.github.io/TerminalBench/">
+    <link rel="alternate" hreflang="ja" href="https://simota.github.io/TerminalBench/ja/">
+    <link rel="alternate" hreflang="x-default" href="https://simota.github.io/TerminalBench/">
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="../styles.css">
+
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://simota.github.io/TerminalBench/ja/">
+    <meta property="og:site_name" content="TerminalBench">
+    <meta property="og:title" content="TerminalBench — 主張の安全性を守るターミナルエミュレーターベンチマーク">
+    <meta property="og:description" content="ターミナルエミュレーター性能のためのCLIとレポートプロトコル。レポートを生成・検証し、ペアごとの適格性を確認してから比較します。">
+    <meta property="og:image" content="https://simota.github.io/TerminalBench/og.png">
+    <meta property="og:image:secure_url" content="https://simota.github.io/TerminalBench/og.png">
+    <meta property="og:image:type" content="image/png">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:image:alt" content="TerminalBenchのターミナルエミュレーター性能プロトコル。レポートを生成・検証し、ペアごとの適格性を確認してから比較します。">
+    <meta property="og:locale" content="ja_JP">
+    <meta property="og:locale:alternate" content="en_US">
+
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:url" content="https://simota.github.io/TerminalBench/ja/">
+    <meta name="twitter:title" content="TerminalBench — 主張の安全性を守るターミナルエミュレーターベンチマーク">
+    <meta name="twitter:description" content="主張を検証し、比較前にペアごとの適格性を確認できるターミナルエミュレーター性能レポート。">
+    <meta name="twitter:image" content="https://simota.github.io/TerminalBench/og.png">
+    <meta name="twitter:image:alt" content="TerminalBenchのターミナルエミュレーター性能プロトコルのワークフロー。">
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "@id": "https://simota.github.io/TerminalBench/ja/#software",
+        "name": "TerminalBench",
+        "alternateName": "tbench",
+        "inLanguage": "ja",
+        "url": "https://simota.github.io/TerminalBench/ja/",
+        "sameAs": ["https://github.com/simota/TerminalBench"],
+        "applicationCategory": "DeveloperApplication",
+        "applicationSubCategory": "ターミナルエミュレーター性能レポート",
+        "description": "バージョン付きのターミナルエミュレーター性能レポートを生成し、主張の境界を検証し、ペアごとの適格性を確認してから、適格な結果を比較するCLIとレポートプロトコルです。",
+        "disambiguatingDescription": "TerminalBenchはターミナルエミュレーターとシェルの性能レポートを評価します。Terminal-Benchという名称のAIエージェント向けベンチマークではありません。",
+        "softwareRequirements": "初回ビルドにRustツールチェーン(cargo)が必要です。ランナーは自己完結の単一バイナリで、検証、適格性確認、値の比較も同じバイナリに内蔵されています。",
+        "featureList": [
+          "バージョン付きJSON性能レポート",
+          "主張の境界に対する意味的検証",
+          "ペアごとの適格性判定：COMPARABLE、NOT_COMPARABLE、UNDETERMINED",
+          "ベースライン比オーバービュー、中央値と方向考慮型competition rank（中央値が完全に同値なら同順位）を示すResults at a glance、指標別dot-and-intervalチャート、勝敗集計を備えた自己完結型HTML比較レポート",
+          "レポート履歴を横断する経時トレンドレポート"
+        ]
+      }
+    </script>
+    <script src="../script.js" defer></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#quickstart">クイックスタートへ移動</a>
+
+    <header class="site-header">
+      <div class="shell header-inner">
+        <a class="brand" href="https://github.com/simota/TerminalBench" aria-label="TerminalBenchリポジトリ">
+          <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
+            <rect x="4.25" y="8.25" width="9.5" height="9.5" rx="2.25"/>
+            <rect x="4.25" y="30.25" width="9.5" height="9.5" rx="2.25"/>
+            <path d="M15 13h4l8 11-8 11h-4M27 24h16"/>
+            <path class="brand-gate" d="M27 16v16"/>
+          </svg>
+          <span>TerminalBench</span>
+        </a>
+        <p class="category"><span class="category-label">ターミナルエミュレーター性能プロトコル · </span><a href="../" hreflang="en" lang="en">English</a></p>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero shell" data-purpose="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow">レポート仕様 v1 · リリースワークフロー</p>
+          <h1 id="hero-title">ターミナル性能を、主張の安全性を守るリリース成果物へ。</h1>
+          <p class="hero-lead">バージョン付きJSONベンチマークを実行して主張を検証し、比較前にペアごとの適格性を確認できます。</p>
+          <a class="cta" href="#quickstart">TerminalBenchを試す <span aria-hidden="true">↓</span></a>
+          <p class="boundary-note"><span aria-hidden="true">⊘</span> 記録するのはプロセスとPTYの観測境界です。画面上のピクセルや、物理キー押下から表示までの遅延ではありません。</p>
+          <div class="first-command" aria-labelledby="hero-command-label">
+            <p class="code-label" id="hero-command-label">最初のコマンド</p>
+            <div class="code-control">
+              <pre tabindex="0" aria-labelledby="hero-command-label"><code id="hero-command">bin/tbench run --output results/report-a.json</code></pre>
+              <button class="copy-button" type="button" data-copy-target="hero-command" data-status-target="hero-copy-status" data-copy-success="コマンドをコピーしました" data-copy-failure="コマンドをコピーできませんでした。選択して手動でコピーしてください。">コマンドをコピー</button>
+            </div>
+            <p class="copy-status" id="hero-copy-status" role="status" aria-live="polite"></p>
+          </div>
+        </div>
+
+        <article class="hero-artifact" data-enter aria-labelledby="artifact-title">
+          <div class="artifact-heading">
+            <p class="code-label" id="artifact-title">登録済み計測 · プロファイル v1.0.0</p>
+            <span class="artifact-state"><span aria-hidden="true">◇</span> 主張境界を示す抜粋</span>
+          </div>
+          <pre><code>{
+  <span class="key">"classification"</span>: <span class="value">"proxy"</span>,
+  <span class="key">"scope"</span>: <span class="value">"pty-output-pipeline"</span>,
+  <span class="key">"observed_boundary"</span>:
+    <span class="value">"fixture-write-start-to-producer-exit"</span>,
+  <span class="key">"limitations"</span>: [
+    <span class="value">"Measures producer-side PTY write completion; terminal parsing, final-frame presentation, and frame skipping are not observed."</span>
+  ],
+  <span class="key">"excluded_claims"</span>: [
+    <span class="refusal">"On-screen rendering throughput"</span>
+  ]
+}</code></pre>
+          <p class="artifact-caption">登録済み計測の抜粋には、観測境界と対象外の主張が含まれます。</p>
+        </article>
+      </section>
+
+      <section class="premise section shell" data-purpose="workflow-introduction" aria-labelledby="premise-title">
+        <p class="section-index" aria-hidden="true">01 / 前提</p>
+        <div>
+          <h2 id="premise-title">ベンチマークは、その主張がゲートを通過して初めて役立ちます。</h2>
+          <p class="lead">TerminalBenchは各実行をバージョン付きJSONとして記録します。バリデーターは各指標が主張できる範囲を検証し、適格性ゲートが2つのレポートを比較へ進められるか判定します。</p>
+        </div>
+      </section>
+
+      <section class="workflow section" data-purpose="safe-sequence" aria-labelledby="workflow-title">
+        <div class="shell">
+          <p class="eyebrow">安全な手順</p>
+          <h2 id="workflow-title">実行。検証。適格性確認。その後に比較。</h2>
+          <ol class="workflow-list">
+            <li>
+              <p class="step-number">01 / 実行</p>
+              <h3>観測結果を記録する</h3>
+              <p>各ターミナルエミュレーター内でTerminalBenchを実行します。各レポートには、環境、手法、観測境界、制約、対象外の主張が記録されます。</p>
+              <pre><code>bin/tbench run --output results/report-a.json</code></pre>
+            </li>
+            <li>
+              <p class="step-number">02 / 検証</p>
+              <h3>安全でないレポートを拒否する</h3>
+              <p>両方のJSONファイルを検証します。構造だけでは不十分です。意味的検証により、登録済みプロファイル、数値の不変条件、主張の境界を強制します。</p>
+              <pre><code>bin/tbench-validate validate results/report-a.json
+bin/tbench-validate validate results/report-b.json</code></pre>
+            </li>
+            <li>
+              <p class="step-number">03 / 適格性確認</p>
+              <h3>ペアを比較へ進められるか判定する</h3>
+              <p>ペアごとのゲートが、計測とワークロードの同一性、必須の既知制御条件を確認します。判定は3種類です。不明な値をワイルドカードとして扱うことはありません。</p>
+              <pre><code>bin/tbench-validate compare results/report-a.json results/report-b.json</code></pre>
+            </li>
+            <li>
+              <p class="step-number">04 / 比較</p>
+              <h3>COMPARABLEの後にだけ値を提示する</h3>
+              <p>コンパレーターはMarkdownテーブル、または<code>--format html</code>で自己完結型のチャートレポート（<code>--baseline</code>で基準を選べるベースライン比オーバービュー、中央値と方向考慮型competition rankを示すResults at a glanceテーブル（中央値が完全に同値なら同順位）、指標別dot-and-intervalチャート（サンプルありではbootstrap 95% CI、なしでは中央値からp95までのwhisker）、勝敗集計）として値を提示します。検証や適格性判定の代わりにはなりません。</p>
+              <pre><code>bin/tbench compare results/report-a.json results/report-b.json --format html</code></pre>
+            </li>
+          </ol>
+          <p class="sequence-stop"><span aria-hidden="true">■</span> NOT_COMPARABLEまたはUNDETERMINEDの場合は、最後のコマンドを実行する前に停止してください。</p>
+        </div>
+      </section>
+
+      <section class="quickstart section shell" id="quickstart" tabindex="-1" data-purpose="quickstart" aria-labelledby="quickstart-heading">
+        <p class="eyebrow">クイックスタート</p>
+        <h2 id="quickstart-heading" tabindex="-1">最初のレポートを作成する。</h2>
+        <p class="setup-note">まず、<a href="https://github.com/simota/TerminalBench">TerminalBenchリポジトリ</a>をクローンするか開き、リポジトリルートへ移動します。</p>
+        <p class="lead" id="quick-command-label">リポジトリルートで次を実行します。</p>
+        <div class="quick-command code-control" aria-labelledby="quick-command-label">
+          <pre tabindex="0" aria-labelledby="quick-command-label"><code id="quick-command">bin/tbench run --output results/report-a.json</code></pre>
+          <button class="copy-button copy-button-inverse" type="button" data-copy-target="quick-command" data-status-target="quick-copy-status" data-copy-success="コマンドをコピーしました" data-copy-failure="コマンドをコピーできませんでした。選択して手動でコピーしてください。">コマンドをコピー</button>
+        </div>
+        <p class="copy-status" id="quick-copy-status" role="status" aria-live="polite"></p>
+        <p class="prerequisite">ランナーは自己完結の単一Rustバイナリです。bin/tbenchが初回利用時にビルドするため、Rustツールチェーン(cargo)はビルド時のみ必要です。検証、適格性確認、値の比較も同じバイナリに内蔵されています。ターミナル向け計測には制御端末が必要です。未対応のコンテキストでは、文書どおりに警告、スキップ、または精度低下が発生します。</p>
+        <details class="safe-sequence">
+          <summary id="safe-sequence-label">安全な比較手順をすべて表示</summary>
+          <pre tabindex="0" aria-labelledby="safe-sequence-label"><code>set -e
+
+# Run once inside each terminal emulator.
+bin/tbench run --output results/report-a.json &amp;&amp;
+bin/tbench run --output results/report-b.json &amp;&amp;
+
+# Validate both reports, then require COMPARABLE.
+bin/tbench-validate validate results/report-a.json &amp;&amp;
+bin/tbench-validate validate results/report-b.json &amp;&amp;
+bin/tbench-validate compare results/report-a.json results/report-b.json &amp;&amp;
+
+# Present values only after the gate exits 0.
+bin/tbench compare results/report-a.json results/report-b.json</code></pre>
+          <p>NOT_COMPARABLE（終了コード7）またはUNDETERMINED（終了コード8）で停止します。</p>
+        </details>
+      </section>
+
+      <section class="eligibility section shell" data-purpose="eligibility-proof" aria-labelledby="eligibility-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">ペアごとの適格性</p>
+            <h2 id="eligibility-title">3つの判定。推測による同一視はしません。</h2>
+          </div>
+          <p class="lead">ゲートが決めるのは比較の可否です。勝者は計算しません。</p>
+        </div>
+        <div class="verdicts">
+          <article class="verdict verdict-comparable">
+            <div class="verdict-header"><span class="verdict-glyph" aria-hidden="true">●</span><h3>COMPARABLE</h3><span>終了コード0</span></div>
+            <p>両レポートが適合し、必須の既知制御条件と計測契約がv1のペア比較ルールを満たしています。</p>
+          </article>
+          <article class="verdict verdict-not-comparable">
+            <div class="verdict-header"><span class="verdict-glyph" aria-hidden="true">■</span><h3>NOT_COMPARABLE</h3><span>終了コード7</span></div>
+            <p>既知の不一致により比較できません。理由をレポートとともに保持し、勝者を提示しないでください。</p>
+          </article>
+          <article class="verdict verdict-undetermined">
+            <div class="verdict-header"><span class="verdict-glyph" aria-hidden="true">△</span><h3>UNDETERMINED</h3><span>終了コード8</span></div>
+            <p>決定的な事実またはワークロードの同一性が不明です。不足しているコンテキストを収集してください。不明は「同じ」を意味しません。</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="claim-proof section" data-purpose="claim-boundary-proof" aria-labelledby="claim-title">
+        <div class="shell">
+          <p class="eyebrow">主張の境界</p>
+          <h2 id="claim-title">レポートが境界を保持し、バリデーターが強制します。</h2>
+          <div class="claim-columns">
+            <article>
+              <p class="claim-label claim-allowed"><span aria-hidden="true">●</span> レポートが主張できること</p>
+              <p>レンダリングスループットについて、登録済みプロキシはフィクスチャの書き込み開始からプロデューサーの終了までを観測します。レポートは、そのスコープ、制約、対象外の主張を保持します。</p>
+              <pre><code>{
+  "classification": "proxy",
+  "scope": "pty-output-pipeline",
+  "observed_boundary":
+    "fixture-write-start-to-producer-exit",
+  "excluded_claims": [
+    "On-screen rendering throughput"
+  ]
+}</code></pre>
+            </article>
+            <article>
+              <p class="claim-label claim-refused"><span aria-hidden="true">■</span> バリデーターが拒否すること</p>
+              <p>同じプロキシを画面への直接提示としてラベル付けし直すと、安定したルールID、JSON Pointer、期待値、実際の値、修正方法を示してフェイルクローズになります。</p>
+              <pre><code>{
+  "rule_id": "TBV-CLAIM-BOUNDARY",
+  "pointer": "/results/0/measurement/observed_boundary",
+  "expected": "fixture-write-start-to-producer-exit",
+  "actual": "final-frame-presented-to-display",
+  "remediation": "Copy the immutable profile field exactly;
+    choose a different profile for different semantics."
+}</code></pre>
+            </article>
+          </div>
+          <p class="contrast-caption">スキーマは構造を確認します。意味的バリデーターは、適合性と主張の安全性を判定します。</p>
+        </div>
+      </section>
+
+      <section class="exits section shell" data-purpose="exit-code-reference" aria-labelledby="exits-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">安定したプロセス結果</p>
+            <h2 id="exits-title">すべての停止に明示的な終了コードがあります。</h2>
+          </div>
+          <p class="lead">終了ステータスを使い、未対応の比較結果が提示段階へ到達する前に自動処理を停止できます。</p>
+        </div>
+        <div class="table-wrap" tabindex="0" role="region" aria-label="TerminalBenchの終了コード">
+          <table>
+            <thead><tr><th scope="col">終了コード</th><th scope="col">意味</th></tr></thead>
+            <tbody>
+              <tr><th scope="row"><code>0</code></th><td>適合またはCOMPARABLE</td></tr>
+              <tr><th scope="row"><code>2</code></th><td>使用方法エラー</td></tr>
+              <tr><th scope="row"><code>3</code></th><td>I/O、UTF-8、strict JSON、または重複キーのエラー</td></tr>
+              <tr><th scope="row"><code>4</code></th><td>適合性または主張の安全性の検証失敗</td></tr>
+              <tr><th scope="row"><code>5</code></th><td>未対応のワイヤーバージョン</td></tr>
+              <tr><th scope="row"><code>6</code></th><td>未対応のプロファイルIDまたはバージョン</td></tr>
+              <tr><th scope="row"><code>7</code></th><td>NOT_COMPARABLE</td></tr>
+              <tr><th scope="row"><code>8</code></th><td>UNDETERMINED</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="boundaries section" data-purpose="trust-boundaries" aria-labelledby="boundaries-title">
+        <div class="shell">
+          <p class="eyebrow">v1が立証すること、しないこと</p>
+          <h2 id="boundaries-title">適合性は具体的に。信頼の範囲は限定的に。</h2>
+          <div class="boundary-columns">
+            <article>
+              <h3>適合するv1レポートが立証すること</h3>
+              <ul class="evidence-list evidence-established">
+                <li>レポートが必須のワイヤー構造に従っている。</li>
+                <li>指標プロファイルが登録済みの手法、スコープ、制約、対象外項目を保持している。</li>
+                <li>意味的バリデーターが不変条件と主張の境界を受理している。</li>
+              </ul>
+            </article>
+            <article>
+              <h3>そのレポートが立証しないこと</h3>
+              <ul class="evidence-list evidence-not-established">
+                <li>計測の絶対的な正確性</li>
+                <li>画面上のレンダリングまたはフレーム提示</li>
+                <li>物理キー押下から表示までの遅延</li>
+                <li>すべてのマシンや環境における再現性</li>
+                <li>独立した中立性、外部での採用、市場でのリーダーシップ</li>
+                <li>適格性ゲートがCOMPARABLEを返す前のペア比較可能性</li>
+              </ul>
+            </article>
+          </div>
+          <p class="leaderboard-note">TerminalBenchはレポートと比較可能性のためのプロトコルであり、最速ターミナルのランキングではありません。</p>
+        </div>
+      </section>
+
+      <section class="faq section shell" data-purpose="faq" aria-labelledby="faq-title">
+        <p class="eyebrow">よくある質問</p>
+        <h2 id="faq-title">最初の実行前に確認しておきたいこと。</h2>
+        <div class="faq-list">
+          <details><summary>TerminalBenchは何を計測しますか？</summary><p>シェルプロセスの時間と、PTY出力、合成PTYエコー、プロセスリソースに対するターミナルエミュレーターのプロキシまたはサンプリング観測を記録します。v1の各指標には、手法、スコープ、観測境界、制約、対象外の主張が記載されます。</p></details>
+          <details><summary>画面に表示される内容を計測しますか？</summary><p>いいえ。プロデューサー側のPTY完了では、ターミナル解析、最終フレーム提示、ピクセル、フレームスキップを観測しません。renderとscrollのプロファイルは画面上の主張を対象外とします。</p></details>
+          <details><summary>input.latencyは物理キー押下を計測しますか？</summary><p>いいえ。合成PTYエコーの往復を計測します。キーボード、GUIイベントルーティング、レンダリング、ディスプレイ提示、物理キー押下から表示までの遅延は対象外です。</p></details>
+          <details><summary>どの2つのレポートでも比較できますか？</summary><p>いいえ。両方のレポートを検証してから、ペアごとの適格性ゲートを実行してください。COMPARABLEが返された後にだけ値を比較します。既知の不一致はNOT_COMPARABLE、決定的なコンテキストの不足はUNDETERMINEDを返します。</p></details>
+          <details><summary>最速ターミナルのランキングですか？</summary><p>いいえ。このプロトコルは範囲を限定した観測を記録し、ペアごとの適格性を判定します。ランキングを運用したり、普遍的な勝者を認定したりはしません。</p></details>
+          <details><summary>環境情報が不足している場合はどうなりますか？</summary><p>レポートは必須の事実を既知または不明として記録します。既知の不一致がすでにペアを拒否しておらず、決定的な事実が不明なままの場合、適格性はUNDETERMINEDです。プラットフォームから検出できない場合、CIから文書化された安定制御条件を提供できます。</p></details>
+          <details><summary>最初の実行には何が必要ですか？</summary><p>初回のみRustツールチェーン(cargo)で単一の自己完結バイナリをビルドします。以降のランタイム依存はありません。ターミナル向けシナリオには制御端末、input latencyには利用可能なPTYが必要です。</p></details>
+          <details><summary>Terminal-BenchというAIエージェント向けベンチマークですか？</summary><p>いいえ。このプロジェクトは、ターミナルエミュレーター性能のレポートと比較可能性のためのプロトコルです。</p></details>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="shell footer-inner">
+        <div>
+          <p class="footer-brand">TerminalBench</p>
+          <p>ターミナルエミュレーター性能のレポートと比較可能性のためのプロトコル</p>
+        </div>
+        <nav aria-label="プロジェクト資料">
+          <a href="https://github.com/simota/TerminalBench">リポジトリ</a>
+          <a href="https://github.com/simota/TerminalBench/blob/main/docs/reporting-spec-v1.md">レポート仕様 v1</a>
+        </nav>
+        <p class="footer-boundary">比較前にバージョン付きの証拠を。ランキングではありません。</p>
+      </div>
+    </footer>
+  </body>
+</html>

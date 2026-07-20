@@ -1,0 +1,112 @@
+{
+  "$description": "TerminalBench landing page design tokens, DTCG 2025.10 shape",
+  "$extensions": {
+    "com.terminalbench.themeModes": {
+      "default": "light",
+      "srgbFallbacks": {
+        "paper": "#f3eee2",
+        "paper-bright": "#fffdf7",
+        "charcoal": "#1c1b17",
+        "charcoal-soft": "#5a554c",
+        "burnt": "#9d351f",
+        "burnt-strong": "#7f2b1b",
+        "burnt-on-inverse": "#e88b6a",
+        "rule": "#c8c0b1",
+        "rule-strong": "#736d63",
+        "success": "#2f6547",
+        "warning": "#735000",
+        "danger": "#8d2f24"
+      },
+      "dark": {
+        "paper": { "colorSpace": "oklch", "components": [0.208, 0.006, 107], "alpha": 1 },
+        "paper-bright": { "colorSpace": "oklch", "components": [0.256, 0.007, 95], "alpha": 1 },
+        "charcoal": { "colorSpace": "oklch", "components": [0.956, 0.014, 85], "alpha": 1 },
+        "charcoal-soft": { "colorSpace": "oklch", "components": [0.803, 0.021, 85], "alpha": 1 },
+        "burnt": { "colorSpace": "oklch", "components": [0.728, 0.123, 40], "alpha": 1 },
+        "burnt-strong": { "colorSpace": "oklch", "components": [0.781, 0.101, 33], "alpha": 1 },
+        "burnt-on-inverse": { "colorSpace": "oklch", "components": [0.728, 0.123, 40], "alpha": 1 },
+        "rule": { "colorSpace": "oklch", "components": [0.422, 0.014, 85], "alpha": 1 },
+        "rule-strong": { "colorSpace": "oklch", "components": [0.572, 0.019, 79], "alpha": 1 },
+        "success": { "colorSpace": "oklch", "components": [0.811, 0.092, 154], "alpha": 1 },
+        "warning": { "colorSpace": "oklch", "components": [0.853, 0.109, 84], "alpha": 1 },
+        "danger": { "colorSpace": "oklch", "components": [0.781, 0.101, 33], "alpha": 1 }
+      }
+    }
+  },
+  "color": {
+    "primitive": {
+      "paper": { "$type": "color", "$value": { "colorSpace": "oklch", "components": [0.95, 0.017, 88], "alpha": 1 }, "$description": "Warm page canvas" },
+      "paper-bright": { "$type": "color", "$value": { "colorSpace": "oklch", "components": [0.994, 0.008, 92], "alpha": 1 }, "$description": "Raised evidence surface" },
+      "charcoal": { "$type": "color", "$value": { "colorSpace": "oklch", "components": [0.222, 0.008, 95], "alpha": 1 }, "$description": "Primary ink" },
+      "charcoal-soft": { "$type": "color", "$value": { "colorSpace": "oklch", "components": [0.451, 0.016, 82], "alpha": 1 }, "$description": "Secondary ink" },
+      "burnt": { "$type": "color", "$value": { "colorSpace": "oklch", "components": [0.477, 0.143, 34], "alpha": 1 }, "$description": "Action and focus signal" },
+      "burnt-strong": { "$type": "color", "$value": { "colorSpace": "oklch", "components": [0.412, 0.12, 33], "alpha": 1 }, "$description": "Active action signal" },
+      "burnt-on-inverse": { "$type": "color", "$value": { "colorSpace": "oklch", "components": [0.728, 0.123, 40], "alpha": 1 }, "$description": "Warm accent that remains readable on inverse surfaces" },
+      "rule": { "$type": "color", "$value": { "colorSpace": "oklch", "components": [0.81, 0.023, 83], "alpha": 1 }, "$description": "Decorative rule" },
+      "rule-strong": { "$type": "color", "$value": { "colorSpace": "oklch", "components": [0.537, 0.017, 81], "alpha": 1 }, "$description": "Meaningful component boundary" },
+      "success": { "$type": "color", "$value": { "colorSpace": "oklch", "components": [0.461, 0.076, 157], "alpha": 1 }, "$description": "COMPARABLE state" },
+      "warning": { "$type": "color", "$value": { "colorSpace": "oklch", "components": [0.457, 0.095, 80], "alpha": 1 }, "$description": "UNDETERMINED state" },
+      "danger": { "$type": "color", "$value": { "colorSpace": "oklch", "components": [0.443, 0.13, 30], "alpha": 1 }, "$description": "NOT_COMPARABLE and refusal state" }
+    },
+    "background": { "canvas": { "$type": "color", "$value": "{color.primitive.paper}", "$description": "Page background" } },
+    "surface": {
+      "primary": { "$type": "color", "$value": "{color.primitive.paper-bright}", "$description": "Evidence and code surface" },
+      "inverse": { "$type": "color", "$value": "{color.primitive.charcoal}", "$description": "Workflow band" }
+    },
+    "text": {
+      "primary": { "$type": "color", "$value": "{color.primitive.charcoal}", "$description": "Body and heading text" },
+      "muted": { "$type": "color", "$value": "{color.primitive.charcoal-soft}", "$description": "Secondary text" },
+      "on-inverse": { "$type": "color", "$value": "{color.primitive.paper-bright}", "$description": "Text on inverse surface" }
+    },
+    "action": {
+      "primary": { "$type": "color", "$value": "{color.primitive.charcoal}", "$description": "Single CTA" },
+      "hover": { "$type": "color", "$value": "{color.primitive.burnt}", "$description": "CTA hover" }
+    },
+    "accent": {
+      "on-inverse": { "$type": "color", "$value": "{color.primitive.burnt-on-inverse}", "$description": "Workflow step accent on inverse surfaces" }
+    },
+    "focus": {
+      "ring": { "$type": "color", "$value": "{color.primitive.burnt}", "$description": "Default focus indicator" },
+      "on-inverse": { "$type": "color", "$value": "{color.text.on-inverse}", "$description": "Focus indicator on inverse surfaces" }
+    },
+    "feedback": {
+      "comparable": { "$type": "color", "$value": "{color.primitive.success}", "$description": "COMPARABLE" },
+      "undetermined": { "$type": "color", "$value": "{color.primitive.warning}", "$description": "UNDETERMINED" },
+      "not-comparable": { "$type": "color", "$value": "{color.primitive.danger}", "$description": "NOT_COMPARABLE" }
+    }
+  },
+  "font": {
+    "family": {
+      "body": { "$type": "fontFamily", "$value": ["system-ui", "-apple-system", "BlinkMacSystemFont", "Segoe UI", "sans-serif"], "$description": "Zero-transfer body stack" },
+      "display": { "$type": "fontFamily", "$value": ["ui-serif", "Georgia", "Cambria", "Times New Roman", "Times", "serif"], "$description": "Editorial display stack" },
+      "mono": { "$type": "fontFamily", "$value": ["ui-monospace", "SFMono-Regular", "Consolas", "Liberation Mono", "monospace"], "$description": "Commands and protocol identifiers" }
+    },
+    "size": {
+      "100": { "$type": "dimension", "$value": { "value": 0.875, "unit": "rem" }, "$description": "Metadata" },
+      "200": { "$type": "dimension", "$value": { "value": 1, "unit": "rem" }, "$description": "Body and status floor" },
+      "300": { "$type": "dimension", "$value": { "value": 1.25, "unit": "rem" }, "$description": "Lead copy" }
+    }
+  },
+  "space": {
+    "050": { "$type": "dimension", "$value": { "value": 0.25, "unit": "rem" }, "$description": "Tight pairing" },
+    "100": { "$type": "dimension", "$value": { "value": 0.5, "unit": "rem" }, "$description": "Base grid" },
+    "200": { "$type": "dimension", "$value": { "value": 1, "unit": "rem" }, "$description": "Compact padding" },
+    "300": { "$type": "dimension", "$value": { "value": 1.5, "unit": "rem" }, "$description": "Local stack" },
+    "400": { "$type": "dimension", "$value": { "value": 2, "unit": "rem" }, "$description": "Section internal gap" },
+    "600": { "$type": "dimension", "$value": { "value": 3, "unit": "rem" }, "$description": "Section gap" },
+    "800": { "$type": "dimension", "$value": { "value": 4, "unit": "rem" }, "$description": "Desktop rhythm" }
+  },
+  "radius": {
+    "control": { "$type": "dimension", "$value": { "value": 0.25, "unit": "rem" }, "$description": "Controls" },
+    "surface": { "$type": "dimension", "$value": { "value": 0.5, "unit": "rem" }, "$description": "Evidence surface" },
+    "pill": { "$type": "dimension", "$value": { "value": 999, "unit": "px" }, "$description": "Status only" }
+  },
+  "duration": {
+    "instant": { "$type": "duration", "$value": { "value": 0, "unit": "ms" }, "$description": "Reduced motion" },
+    "feedback": { "$type": "duration", "$value": { "value": 150, "unit": "ms" }, "$description": "Control feedback" },
+    "hero": { "$type": "duration", "$value": { "value": 400, "unit": "ms" }, "$description": "Optional evidence entrance" }
+  },
+  "size": {
+    "control": { "minimum": { "$type": "dimension", "$value": { "value": 2.75, "unit": "rem" }, "$description": "44px minimum target" } }
+  }
+}

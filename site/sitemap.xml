@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+  <url>
+    <loc>https://simota.github.io/TerminalBench/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://simota.github.io/TerminalBench/"/>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://simota.github.io/TerminalBench/ja/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://simota.github.io/TerminalBench/"/>
+    <lastmod>2026-07-20</lastmod>
+  </url>
+  <url>
+    <loc>https://simota.github.io/TerminalBench/ja/</loc>
+    <xhtml:link rel="alternate" hreflang="en" href="https://simota.github.io/TerminalBench/"/>
+    <xhtml:link rel="alternate" hreflang="ja" href="https://simota.github.io/TerminalBench/ja/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://simota.github.io/TerminalBench/"/>
+    <lastmod>2026-07-20</lastmod>
+  </url>
+</urlset>
