@@ -194,17 +194,28 @@ PY
 fi
 pass "portable overrides preserve fact/meta parity, comparability, and fail-soft invalid values"
 
-TERM_PROGRAM="ConformanceTerm" TERM_PROGRAM_VERSION="1.0" \
-  "$TBENCH" run --scenario shell-startup --shells zsh --runs 1 \
-  --settle 0 --warmup 0 --force --output "$TMP/actual.json" >/dev/null 2>/dev/null
+mkdir -p "$TMP/zdotdir"
+: >"$TMP/zdotdir/.zshrc"
+if ! TERM_PROGRAM="ConformanceTerm" TERM_PROGRAM_VERSION="1.0" \
+  ZDOTDIR="$TMP/zdotdir" \
+  "$TBENCH" run --scenario shell-startup --shells /bin/zsh --runs 1 \
+  --settle 0 --warmup 0 --force --output "$TMP/actual.json" \
+  >"$TMP/actual.out" 2>"$TMP/actual.err"; then
+  cat "$TMP/actual.err" >&2
+  fail "actual one-trial tbench run failed"
+fi
 "$VALIDATOR" validate "$TMP/actual.json" >/dev/null
 pass "actual one-trial tbench run emits a conformant report"
 
-TERM_PROGRAM="ConformanceTerm" TERM_PROGRAM_VERSION="1.0" \
-TBENCH_TERMINAL_ID="EnvTerm 1.0" \
-  "$TBENCH" run --scenario shell-startup --shells zsh --runs 1 \
+if ! TERM_PROGRAM="ConformanceTerm" TERM_PROGRAM_VERSION="1.0" \
+  TBENCH_TERMINAL_ID="EnvTerm 1.0" ZDOTDIR="$TMP/zdotdir" \
+  "$TBENCH" run --scenario shell-startup --shells /bin/zsh --runs 1 \
   --settle 0 --warmup 0 --force --app "CliTerm 2.0" \
-  --output "$TMP/actual-app.json" >/dev/null 2>/dev/null
+  --output "$TMP/actual-app.json" \
+  >"$TMP/actual-app.out" 2>"$TMP/actual-app.err"; then
+  cat "$TMP/actual-app.err" >&2
+  fail "tbench run --app failed"
+fi
 "$VALIDATOR" validate "$TMP/actual-app.json" >/dev/null
 if [[ "$PORTABLE" != 1 ]]; then
 python3 - "$TMP/actual-app.json" <<'PY'
