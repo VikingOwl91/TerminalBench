@@ -1,9 +1,8 @@
-//! Timing backend — replaces both lib/stats.sh's zsh-timer fallback and
-//! the external hyperfine dependency. `std::time::Instant` is a monotonic
-//! clock read with no fork per sample, and warmup + IQR filtering matches
-//! what hyperfine provided, so a single built-in backend ("rust-timer")
-//! covers both roles. Backend ids are registered in Reporting Spec v1's
-//! profile registry (docs/reporting-spec-v1.md — registry amendment).
+//! Timing backends. "rust-timer" spawns a command and times it to exit
+//! with `std::time::Instant`; "rust-writer" times the write of a built-in
+//! fixture to the controlling terminal. Both get warmup trials and IQR
+//! filtering. Backend ids are registered in Reporting Spec v1's profile
+//! registry (docs/reporting-spec-v1.md).
 
 use std::fs::File;
 use std::io::{Error, ErrorKind, Write};
@@ -16,7 +15,7 @@ use crate::stats;
 
 pub const BACKEND_TIMER: &str = "rust-timer";
 
-/// Adaptive-sampling tunables (--runs auto), unchanged from lib/stats.sh.
+/// Adaptive-sampling tunables (--runs auto).
 pub const ADAPTIVE_BATCH: usize = 10;
 pub const ADAPTIVE_CAP: usize = 50;
 pub const ADAPTIVE_TARGET_PCT: f64 = 5.0;

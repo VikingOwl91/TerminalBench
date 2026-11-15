@@ -1,7 +1,9 @@
-//! `tbench validate` — port of bin/tbench-validate (Reporting Spec v1
-//! reference validator: conformance, pairwise comparability, profiles).
+//! `tbench validate` — Reporting Spec v1 reference validator:
+//! conformance, pairwise comparability, profiles.
 //!
-//! Faithful port of the Python reference. It uses a hand-rolled JSON reader so
+//! Ported from a Python reference that is no longer in the repository; the
+//! conformance suite (tests/report-v1.sh) is what pins its behaviour now.
+//! It uses a hand-rolled JSON reader so
 //! duplicate keys, NaN/Infinity, and the int/float distinction match Python's
 //! `json` module (serde_json silently keeps the last duplicate and coerces
 //! integers), and it reproduces Python's `json.dumps` formatting (sorted keys,

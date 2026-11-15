@@ -1,10 +1,9 @@
-//! `tbench trend` — port of lib/trend.py (longitudinal per-metric history
-//! across accumulated reports; markdown tables + HTML line charts).
+//! `tbench trend` — longitudinal per-metric history across accumulated
+//! reports: markdown tables + HTML line charts.
 //!
 //! Reports are sorted by meta.timestamp (ISO8601 lexicographic order);
 //! each report's meta.terminal is its series identity — multiple terminals
-//! become multiple series/columns and are never averaged together. See
-//! lib/trend.py for the authoritative behavior this mirrors.
+//! become multiple series/columns and are never averaged together.
 
 use serde_json::Value;
 use std::collections::HashMap;
@@ -16,8 +15,7 @@ use crate::show::{section_for, unit_display};
 
 // (light, dark) hex pairs — dataviz reference palette, CVD-safe order.
 // Color is assigned by terminal (first-appearance order across the
-// chronologically-sorted reports), fixed across every chart. Copied from
-// lib/trend.py's PALETTE.
+// chronologically-sorted reports), fixed across every chart.
 const PALETTE: &[(&str, &str)] = &[
     ("#2a78d6", "#3987e5"), // 1 blue
     ("#008300", "#008300"), // 2 green

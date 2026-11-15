@@ -1,8 +1,5 @@
-//! `tbench compare` — port of lib/compare.py (markdown table, threshold
-//! regression gate, self-contained HTML chart report). Absorbs the CLI
-//! wrapper behavior that lived in bin/tbench's tbench_cmd_compare (arg
-//! validation, default html output path, --output file writing) so the
-//! subcommand is self-contained. compare stays read-only: no lock file.
+//! `tbench compare` — markdown table, regression gate, and a
+//! self-contained HTML chart report. compare is read-only: no lock file.
 
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
@@ -15,9 +12,8 @@ use crate::show::{metric_summary, section_for, unit_display, SECTION_ORDER};
 use crate::stats::{bootstrap_median_ci, mann_whitney_p};
 
 // Fallback for results without measurement.direction (pre-Reporting-Spec-v1
-// reports): metrics where a HIGHER median is better. Mirrors compare.py's
-// HIGHER_IS_BETTER (render.throughput only — deliberately narrower than
-// show.py's copy) so the direction-aware "best" verdict stays byte-identical.
+// reports): metrics where a HIGHER median is better. Same list as show
+// and trend use.
 fn higher_is_better_fallback(metric: &str) -> bool {
     metric == "render.throughput"
 }
@@ -1723,7 +1719,7 @@ fn die(msg: &str, code: u8) -> ExitCode {
     ExitCode::from(code)
 }
 
-// --- static assets (CSS + tooltip JS), ported verbatim from compare.py ----
+// --- static assets (CSS + tooltip JS) --------------------------------------
 
 const CSS_TEMPLATE: &str = r#"  :root, .viz-root {
     color-scheme: light;
