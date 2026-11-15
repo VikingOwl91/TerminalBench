@@ -230,6 +230,29 @@ Trials inside a run are never used for significance. They share the run's
 conditions, and testing them made two identical runs look different about
 a quarter of the time; see [`docs/aa-baseline.md`](docs/aa-baseline.md).
 
+### A/A self-check (`tbench aa`)
+
+Before trusting a threshold, measure what your machine does with no change
+at all:
+
+```sh
+# 8 runs of one scenario, then the analysis
+bin/tbench aa --scenario shell-startup
+
+# Analyse reports you already have of one configuration
+bin/tbench aa --from results/aa-*/aa-*.json
+```
+
+`aa` runs the same configuration `--repeats` times (default 8), then for
+each row shows the spread of the per-run medians and how many of the
+possible half-vs-half splits the regression gate would fail at each of
+`--thresholds` (default `0,2,5,10`). Every one of those failures is noise,
+so the output ends with the smallest tested threshold that produced none.
+With fewer than 8 runs the halves are too small for the gate's significance
+test and the figures are for the threshold alone. The runs share one
+session, so leave headroom for drift between sessions.
+[`docs/aa-baseline.md`](docs/aa-baseline.md) has reference numbers.
+
 ### Raw samples and the bootstrap CI (`--keep-samples`)
 
 By default `run` only keeps median/p95/stddev — the raw per-trial values
@@ -575,6 +598,7 @@ src/fidelity.rs      # DECSET 2026 synchronized-output probe
 src/fire.rs          # integrated DOOM-fire workload (port of the retired C tool)
 src/report.rs        # Reporting Spec v1 JSON assembly + env metadata
 src/show.rs / compare.rs / trend.rs   # report views (recap, tables/HTML, history)
+src/aa.rs            # A/A self-check of the regression gate
 src/orchestrate.rs   # per-app launch adapters (macOS)
 src/validate.rs      # Reporting Spec v1 reference validator
 scenarios/           # *.yaml scenario definitions
