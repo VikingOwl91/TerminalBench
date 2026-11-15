@@ -173,11 +173,14 @@ bin/tbench compare results/a.json results/b.json --output results/comparison.md
 # unless --output is given; never printed to stdout)
 bin/tbench compare results/a.json results/b.json --format html
 
-# CI regression gate: exactly 2 files (baseline, latest), exit non-zero on regression
+# Regression gate: 2 files (baseline, latest), exit 3 on regression
 bin/tbench compare results/baseline.json results/latest.json --threshold 10%
 
-# Keep raw per-trial samples (opt-in — see "Statistical rigor" below) so
-# compare can add a bootstrap CI and a significance-aware regression check
+# Regression gate over repeated runs (at least 4 per side for a significance test)
+bin/tbench compare --threshold 5% results/base-*.json --latest results/new-*.json
+
+# Keep raw per-trial samples (opt-in — see "Raw samples" below) so
+# compare can add a bootstrap CI
 bin/tbench run --keep-samples --output results/baseline.json
 ```
 
@@ -192,16 +195,36 @@ missing from a given file shows as `-` rather than dropping the row. A
 "Detail" table (p95/stddev, plus a bootstrap CI when `--keep-samples` data
 is present — see below) follows the main comparison.
 
-`--threshold` mode only accepts exactly 2 files (baseline, then latest) and
-exits `0` if nothing regressed past the threshold, or `3` with a
-regressions table listing metric/baseline/latest/% change if something did
-— suitable for a CI gate on dotfiles/config changes. A baseline row with
-no counterpart in the latest report also exits `3`: a metric that
-disappeared cannot pass the gate. The threshold must be a non-negative
-percentage (`10%` or `10`); anything else is a usage error (exit `2`).
-`--threshold` works the same way regardless of `--format`.
+`--threshold` mode is the regression gate. It exits `0` if nothing got
+worse past the threshold, or `3` with a table of the flagged rows. The
+threshold must be a non-negative percentage (`10%` or `10`); anything else
+is a usage error (exit `2`). The report it prints states every rule it
+applied.
 
-### Statistical rigor (`--keep-samples`, bootstrap CI, significance)
+- **Two files** (baseline, then latest): each row is judged on the
+  threshold alone. There is no significance test, and the report and a
+  stderr line say so. Identical configurations differ by a few percent from
+  run to run, so use a threshold well above that or pass repeated runs.
+- **Groups of runs** (`BASELINE... --latest LATEST...`): each row is
+  compared on the median of its per-run medians. With **at least 4 runs on
+  each side**, a flagged row fails only if a Mann-Whitney U test across the
+  run medians gives p<0.05. With fewer runs the test cannot reach that
+  level, so the threshold alone decides, as in the two-file form. This form
+  prints the Markdown regression report only.
+- **Absolute rule**: a percentage-unit row whose baseline median is 0 (an
+  idle `resource.cpu`) has no relative change. It fails when the latest
+  median is more than `--threshold-points` (default 5) percentage points
+  above the baseline. Percentage-unit rows with a non-zero baseline must
+  also move by more than 1 point, the resolution of one sampling window.
+- A baseline row with no counterpart in any latest run exits `3`: a metric
+  that disappeared cannot pass the gate. A zero-baseline row in another
+  unit is listed as not evaluated.
+
+Trials inside a run are never used for significance. They share the run's
+conditions, and testing them made two identical runs look different about
+a quarter of the time; see [`docs/aa-baseline.md`](docs/aa-baseline.md).
+
+### Raw samples and the bootstrap CI (`--keep-samples`)
 
 By default `run` only keeps median/p95/stddev — the raw per-trial values
 are discarded once those are computed, keeping report size/shape exactly
@@ -210,24 +233,13 @@ result's own unit, in trial order — the same values median/p95/stddev were com
 as a `"samples"` array, opt-in specifically because it changes JSON size
 (20 trials ≈ 20 extra numbers per result).
 
-When `compare` finds `"samples"` on both files being compared for a
-metric, it (stdlib-only — no SciPy, matching the rest of the project's
-"no added dependencies" stance):
-
-- Computes a **bootstrap 95% CI on the median** (1000 resamples,
-  fixed-seed so the CI is reproducible from the same samples) and shows it
-  in the Markdown detail table, the HTML report's table view and tooltip,
-  and as a band in each per-metric chart. Without samples, the chart uses a
-  median→p95 whisker instead.
-- In `--threshold` mode, requires a **Mann-Whitney U test** (two-sided,
-  normal approximation with tie correction) to also report p<0.05 before
-  counting a threshold-exceeding row as an actual regression — a metric
-  that moved past the threshold but whose baseline/latest distributions
-  still overlap heavily (noise, not a real change) is reported but marked
-  "no" under Significant?/Regression?, and doesn't fail the run. Rows
-  where either file lacks samples for that metric fall back to the
-  original threshold-only check (unchanged behavior — this is fully
-  backward compatible with reports that never used `--keep-samples`).
+When `compare` finds `"samples"` on a file, it computes a **bootstrap 95%
+CI on the median** (1000 resamples, fixed-seed so the CI is reproducible
+from the same samples) and shows it in the Markdown detail table, the HTML
+report's table view and tooltip, and as a band in each per-metric chart.
+Without samples, the chart uses a median→p95 whisker instead. The interval
+describes the trials of that one run; it does not cover run-to-run
+variation. The regression gate does not use samples.
 
 ### Automated multi-emulator runs (`orchestrate`, macOS only)
 
@@ -595,11 +607,8 @@ semantic conformance, claim safety, or pairwise comparability; use
   synchronized output — it does not confirm any given run actually
   avoided frame skipping (that would need screen-capture + a permission
   grant, judged not worth it yet per proposal §C).
-- `--keep-samples`/bootstrap CI/Mann-Whitney significance all require both
-  files being compared to carry `"samples"` for the same metric; without
-  that, `compare` falls back to the original median/p95/stddev-only,
-  threshold-only behavior — fully backward compatible with reports from
-  before this feature existed.
+- The bootstrap CI needs `--keep-samples` data and describes one run only.
+  The regression gate's significance test needs at least 4 runs per side.
 - `scroll.proxy` is an approximation, not a true redraw-event
   measurement — see caveats above.
 - `render.throughput`'s `cjk` variant's MB/s isn't directly comparable to

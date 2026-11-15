@@ -34,6 +34,7 @@ Usage:
   tbench show [FILE]
   tbench compare FILE FILE [FILE ...] [--format markdown|html] [--output PATH] [--baseline NAME]
   tbench compare BASELINE.json LATEST.json --threshold 10%
+  tbench compare --threshold 10% BASELINE.json ... --latest LATEST.json ...
   tbench trend [FILE ...] [--format markdown|html] [--output PATH]
   tbench orchestrate --apps Ghostty,iTerm,Terminal [--scenario NAME] [--runs N]
                       [--format markdown|html] [--output-dir PATH] [--timeout N]
@@ -84,11 +85,21 @@ Options (compare):
                     self-contained chart report, always written to a file:
                     --output if given, else results/compare-<timestamp>.html)
   --output PATH     Write the report to PATH (in addition to stdout for markdown)
-  --threshold PCT    Regression-detection mode: requires exactly 2 files
-                     (baseline, latest); exits non-zero if any metric
-                     regressed by more than PCT (e.g. "10%") AND (when both
-                     files have --keep-samples data for that metric)
-                     Mann-Whitney p<0.05
+  --threshold PCT   Regression gate: exits 3 if any metric got worse by more
+                    than PCT (e.g. "10%"). Takes 2 files (baseline, latest),
+                    or groups of repeated runs separated by --latest
+  --latest          With --threshold: files before it are baseline runs,
+                    files after it are latest runs. Each metric is compared
+                    on the median of its per-run medians. With at least 4
+                    runs on each side a flagged metric fails only if a
+                    Mann-Whitney U test across the run medians gives p<0.05;
+                    with fewer runs (including the 2-file form) there is no
+                    significance test and the threshold alone decides
+  --threshold-points N
+                    With --threshold: absolute rule for percentage-unit
+                    metrics whose baseline median is 0 (idle resource.cpu):
+                    fail when the latest median is more than N points above
+                    it (default: 5, minimum: 1)
   --baseline NAME   HTML only: which entity the Overview chart's delta bars
                     compare against (a terminal name or an input file/path);
                     default is the first file
