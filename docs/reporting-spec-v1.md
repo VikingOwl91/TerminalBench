@@ -68,7 +68,7 @@ Known control identifiers use these canonical registries:
 - `power_source`: `ac`, `battery`, or `ups`.
 - `<token>`: lowercase ASCII beginning with an alphanumeric and then containing only alphanumerics, `.`, `_`, or `-`.
 
-`machine_model` is a case-sensitive, trimmed opaque identifier: leading/trailing whitespace and line breaks are forbidden. Its source SHOULD be the platform's stable hardware-model identifier (the reference emitter uses macOS `sysctl -n hw.model`), or an explicitly supplied CI value. A producer MUST NOT case-fold or reinterpret it.
+`machine_model` is a case-sensitive, trimmed opaque identifier: leading/trailing whitespace and line breaks are forbidden. Its source SHOULD be the platform's stable hardware-model identifier, or an explicitly supplied CI value. The reference emitter uses macOS `sysctl -n hw.model`; on Linux it uses the DMI system vendor and product name (the board vendor and name when those are firmware placeholders, or the device-tree model), followed by ` / ` and the CPU model name. A producer MUST NOT case-fold or reinterpret it.
 
 `meta` preserves the legacy consumer surface. It MUST contain non-empty string `timestamp` (RFC 3339 date-time), `os`, `runner`, `terminal`, and `shell`, plus `synchronized_output_supported` (`supported`, `unsupported`, or `no_reply`). It MAY contain `frame_skip_risk_note`, `power_source`, `low_power_mode` (boolean), `machine_model`, `cpu`, `gpu`, `display_refresh_hz` (positive number), and `meta_notes`; no other member is allowed. `meta` is descriptive; pairwise eligibility uses `run_context`, not values guessed from `meta`.
 
@@ -185,7 +185,9 @@ Third-party validators can run the portable semantic corpus without implementing
 TBENCH_PORTABLE=1 TBENCH_VALIDATOR=/path/to/validator zsh tests/report-v1.sh
 ```
 
-For CI or a non-macOS host, supply stable controls explicitly when platform discovery cannot provide them:
+The reference emitter on Linux derives `power_source` and `low_power_mode` from `/sys/class/power_supply` and the ACPI platform profile, leaves either unknown when it has no sound basis, and records the basis under the `org.terminalbench.host` extension. When `TERM_PROGRAM` is unset it reports the executable name of the process holding the pty master as the terminal identity. It does not discover the display refresh rate.
+
+For CI, or wherever platform discovery cannot provide a control, supply it explicitly:
 
 ```sh
 TBENCH_TERMINAL_ID='ci-terminal 1.0' \
