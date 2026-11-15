@@ -417,95 +417,199 @@ fn parse_threshold(s: &str) -> Option<f64> {
     (v.is_finite() && v >= 0.0).then_some(v / 100.0)
 }
 
-fn regression_fraction(metric: &str, baseline: &Value, latest: &Value) -> Option<f64> {
-    let b = median(baseline);
-    if b == 0.0 {
-        return None;
-    }
-    let l = median(latest);
-    Some(if higher_is_better(metric, baseline) {
-        (b - l) / b
-    } else {
-        (l - b) / b
-    })
+/// Runs per side below which a run-level Mann-Whitney test cannot reach
+/// p<0.05: 3 vs 3 fully separated medians still give p of about 0.08.
+pub const MIN_RUNS_FOR_SIGNIFICANCE: usize = 4;
+/// Default absolute rule for percentage-unit rows with a zero baseline.
+const DEFAULT_ABS_POINTS: f64 = 5.0;
+/// One clock tick per 1 s window: resource.cpu cannot resolve less.
+const MIN_ABS_POINTS: f64 = 1.0;
+
+#[derive(Clone, Copy)]
+struct GateConfig {
+    /// Relative worsening that counts, as a fraction.
+    threshold: f64,
+    /// Absolute worsening in percentage points for zero-baseline `pct` rows.
+    abs_points: f64,
 }
 
-/// Returns (markdown, exit_code). exit 3 when a real regression fails or a
-/// baseline row has no counterpart in the latest report.
-fn build_regression_report(reports: &[Value], labels: &[String], threshold: f64) -> (String, u8) {
-    let baseline = &reports[0];
-    let latest = &reports[1];
-    let mut base_by_key: Vec<(Key, Value)> = Vec::new();
-    if let Some(arr) = baseline["results"].as_array() {
-        for r in arr {
-            base_by_key.push((row_key(r), r.clone()));
-        }
-    }
-    let mut latest_by_key: HashMap<Key, Value> = HashMap::new();
-    if let Some(arr) = latest["results"].as_array() {
-        for r in arr {
-            latest_by_key.insert(row_key(r), r.clone());
-        }
-    }
+fn parse_points(s: &str) -> Option<f64> {
+    let v = s.trim().parse::<f64>().ok()?;
+    (v.is_finite() && v >= MIN_ABS_POINTS).then_some(v)
+}
 
-    // (key, b, l, pct, sig_label, is_failing)
-    let mut candidates: Vec<(Key, f64, f64, f64, String, bool)> = Vec::new();
-    let mut any_fail = false;
+/// How much worse `latest` is than `baseline`, in the row's own unit
+/// (positive = worse, direction-aware).
+fn worsening(higher_better: bool, baseline: f64, latest: f64) -> f64 {
+    if higher_better {
+        baseline - latest
+    } else {
+        latest - baseline
+    }
+}
+
+/// One row's results across a group of runs, in first-seen row order.
+fn rows_by_key(reports: &[Value]) -> (Vec<Key>, HashMap<Key, Vec<Value>>) {
+    let mut order: Vec<Key> = Vec::new();
+    let mut rows: HashMap<Key, Vec<Value>> = HashMap::new();
+    for report in reports {
+        if let Some(arr) = report["results"].as_array() {
+            for res in arr {
+                let key = row_key(res);
+                if !rows.contains_key(&key) {
+                    order.push(key.clone());
+                }
+                rows.entry(key).or_default().push(res.clone());
+            }
+        }
+    }
+    (order, rows)
+}
+
+struct GateRow {
+    key: Key,
+    baseline: f64,
+    latest: f64,
+    change: String,
+    rule: String,
+    significance: String,
+    failing: bool,
+    sort: f64,
+}
+
+/// Regression gate over a group of baseline runs and a group of latest
+/// runs. Each row is judged on the median of its per-run medians. Returns
+/// (markdown, exit_code); exit 3 when a row fails or a baseline row has no
+/// counterpart in any latest run.
+///
+/// Significance is tested across runs, never across the trials inside one
+/// run: trials within a run share its conditions, so two identical
+/// configurations routinely look different at that level (see
+/// docs/aa-baseline.md).
+fn build_regression_report(
+    baseline_runs: &[Value],
+    latest_runs: &[Value],
+    title: &str,
+    cfg: GateConfig,
+) -> (String, u8) {
+    let (order, base_rows) = rows_by_key(baseline_runs);
+    let (_, latest_rows) = rows_by_key(latest_runs);
+    let testable = baseline_runs.len() >= MIN_RUNS_FOR_SIGNIFICANCE
+        && latest_runs.len() >= MIN_RUNS_FOR_SIGNIFICANCE;
+
+    let mut flagged: Vec<GateRow> = Vec::new();
     let mut missing: Vec<Key> = Vec::new();
-    for (key, base_res) in &base_by_key {
-        let Some(latest_res) = latest_by_key.get(key) else {
+    let mut not_evaluated: Vec<Key> = Vec::new();
+    for key in &order {
+        let base = &base_rows[key];
+        let Some(latest) = latest_rows.get(key) else {
             missing.push(key.clone());
             continue;
         };
-        let metric = &key.0;
-        let Some(pct) = regression_fraction(metric, base_res, latest_res) else {
-            continue;
+        let b_meds: Vec<f64> = base.iter().map(median).collect();
+        let l_meds: Vec<f64> = latest.iter().map(median).collect();
+        let b = crate::stats::median(&b_meds);
+        let l = crate::stats::median(&l_meds);
+        let delta = worsening(higher_is_better(&key.0, &base[0]), b, l);
+        let is_points = key.3 == "pct";
+
+        let (exceeded, change, rule, sort) = if b == 0.0 {
+            if !is_points {
+                not_evaluated.push(key.clone());
+                continue;
+            }
+            (
+                delta > cfg.abs_points,
+                format!("+{} pt", fmtv(delta)),
+                format!("absolute: > {} pt (baseline is 0)", fmtv(cfg.abs_points)),
+                f64::INFINITY,
+            )
+        } else {
+            let frac = delta / b;
+            let rule = if is_points {
+                format!(
+                    "relative: > {:.1}% and > {} pt",
+                    cfg.threshold * 100.0,
+                    fmtv(MIN_ABS_POINTS)
+                )
+            } else {
+                format!("relative: > {:.1}%", cfg.threshold * 100.0)
+            };
+            (
+                frac > cfg.threshold && (!is_points || delta > MIN_ABS_POINTS),
+                format!("+{:.1}%", frac * 100.0),
+                rule,
+                frac,
+            )
         };
-        let b = median(base_res);
-        let l = median(latest_res);
-        if pct <= threshold {
+        if !exceeded {
             continue;
         }
-        let (sig_label, is_failing) = if has_samples(base_res) && has_samples(latest_res) {
-            let p = mann_whitney_p(
-                &samples_of(base_res).unwrap(),
-                &samples_of(latest_res).unwrap(),
-            );
-            match p {
-                Some(p) => {
-                    let failing = p < 0.05;
-                    (
-                        format!("{} (p={p:.3})", if failing { "yes" } else { "no" }),
-                        failing,
-                    )
-                }
-                None => ("n/a".to_string(), false),
+
+        let (significance, failing) = if b_meds.len() >= MIN_RUNS_FOR_SIGNIFICANCE
+            && l_meds.len() >= MIN_RUNS_FOR_SIGNIFICANCE
+        {
+            match mann_whitney_p(&b_meds, &l_meds) {
+                Some(p) => (
+                    format!(
+                        "{} (p={p:.3}, {} vs {} runs)",
+                        if p < 0.05 { "yes" } else { "no" },
+                        b_meds.len(),
+                        l_meds.len()
+                    ),
+                    p < 0.05,
+                ),
+                None => ("not tested".to_string(), true),
             }
         } else {
-            ("n/a (no samples)".to_string(), true)
+            (
+                format!("not tested ({} vs {} runs)", b_meds.len(), l_meds.len()),
+                true,
+            )
         };
-        any_fail = any_fail || is_failing;
-        candidates.push((key.clone(), b, l, pct, sig_label, is_failing));
+        flagged.push(GateRow {
+            key: key.clone(),
+            baseline: b,
+            latest: l,
+            change,
+            rule,
+            significance,
+            failing,
+            sort,
+        });
     }
 
     let mut lines: Vec<String> = vec![
+        format!("## Regression check ({title})"),
+        String::new(),
         format!(
-            "## Regression check ({} -> {}, threshold {:.1}%)",
-            labels[0],
-            labels[1],
-            threshold * 100.0
+            "Runs: {} baseline, {} latest. Each row compares the median of its per-run medians.",
+            baseline_runs.len(),
+            latest_runs.len()
         ),
         String::new(),
-        "Fail requires the threshold exceeded AND Mann-Whitney p<0.05, for rows \
-where both files kept samples (`run --keep-samples`); rows without \
-samples on both sides fall back to the threshold-only check."
-            .to_string(),
+        "Rules:".to_string(),
+        format!(
+            "- Relative: a row is flagged when it is worse by more than {:.1}%.",
+            cfg.threshold * 100.0
+        ),
+        format!(
+            "- Absolute: a percentage-unit row whose baseline median is 0 (an idle `resource.cpu`) has no relative change; it is flagged when the latest median is more than {} percentage points above it. Percentage-unit rows with a non-zero baseline must also move by more than {} point, the resolution of one sampling window.",
+            fmtv(cfg.abs_points),
+            fmtv(MIN_ABS_POINTS)
+        ),
+        if testable {
+            "- Significance: a flagged row fails only if a Mann-Whitney U test across the per-run medians gives p<0.05. Trials inside a run are not used.".to_string()
+        } else {
+            format!(
+                "- Significance: not tested. It needs at least {MIN_RUNS_FOR_SIGNIFICANCE} runs on each side; with fewer, every flagged row fails on its rule alone and may be run-to-run noise."
+            )
+        },
         String::new(),
     ];
     if !missing.is_empty() {
         lines.push(
-            "Baseline rows with no result in the latest report (a metric that \
-disappeared cannot pass the gate):"
+            "Baseline rows with no result in any latest run (a metric that disappeared cannot pass the gate):"
                 .to_string(),
         );
         lines.push(String::new());
@@ -514,41 +618,53 @@ disappeared cannot pass the gate):"
         }
         lines.push(String::new());
     }
-    let missing_code = if missing.is_empty() { 0 } else { 3 };
-    if candidates.is_empty() {
-        lines.push(format!(
-            "No regressions above the {:.1}% threshold.",
-            threshold * 100.0
-        ));
-        return (lines.join("\n"), missing_code);
-    }
-
-    lines.push("| Metric | Baseline | Latest | Change | Significant? | Regression? |".to_string());
-    lines.push("|---|---|---|---|---|---|".to_string());
-    // sorted by -pct (descending); stable, like Python's sorted().
-    let mut sorted = candidates.clone();
-    sorted.sort_by(|a, b| b.3.partial_cmp(&a.3).unwrap_or(std::cmp::Ordering::Equal));
-    for (key, b, l, pct, sig_label, is_failing) in &sorted {
-        lines.push(format!(
-            "| {} | {} | {} | +{:.1}% | {} | {} |",
-            row_label(key),
-            fmtv(*b),
-            fmtv(*l),
-            pct * 100.0,
-            sig_label,
-            if *is_failing { "yes" } else { "no" }
-        ));
-    }
-
-    if !any_fail {
-        lines.push(String::new());
+    if !not_evaluated.is_empty() {
         lines.push(
-            "No row met both the threshold and the significance bar, so this is not treated as a regression."
+            "Rows not evaluated because the baseline median is 0 and the unit has no absolute rule:"
                 .to_string(),
         );
+        lines.push(String::new());
+        for key in &not_evaluated {
+            lines.push(format!("- {}", row_label(key)));
+        }
+        lines.push(String::new());
+    }
+    let missing_code = if missing.is_empty() { 0 } else { 3 };
+    if flagged.is_empty() {
+        lines.push("No row exceeded its rule.".to_string());
         return (lines.join("\n"), missing_code);
     }
-    (lines.join("\n"), 3)
+
+    lines.push(
+        "| Metric | Baseline | Latest | Change | Rule | Significant? | Regression? |".to_string(),
+    );
+    lines.push("|---|---|---|---|---|---|---|".to_string());
+    flagged.sort_by(|a, b| {
+        b.sort
+            .partial_cmp(&a.sort)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    for row in &flagged {
+        lines.push(format!(
+            "| {} | {} | {} | {} | {} | {} | {} |",
+            row_label(&row.key),
+            fmtv(row.baseline),
+            fmtv(row.latest),
+            row.change,
+            row.rule,
+            row.significance,
+            if row.failing { "yes" } else { "no" }
+        ));
+    }
+    if flagged.iter().any(|row| row.failing) {
+        return (lines.join("\n"), 3);
+    }
+    lines.push(String::new());
+    lines.push(
+        "No flagged row was significant across runs, so this is not treated as a regression."
+            .to_string(),
+    );
+    (lines.join("\n"), missing_code)
 }
 
 // --- baseline resolution --------------------------------------------------
@@ -1324,7 +1440,10 @@ pub fn cmd_compare(args: &[String], root: &Path) -> ExitCode {
     let mut output: Option<PathBuf> = None;
     let mut threshold: Option<String> = None;
     let mut baseline: Option<String> = None;
+    let mut points: Option<String> = None;
     let mut files: Vec<String> = Vec::new();
+    let mut latest_files: Vec<String> = Vec::new();
+    let mut grouped = false;
 
     let mut it = args.iter();
     while let Some(arg) = it.next() {
@@ -1345,17 +1464,39 @@ pub fn cmd_compare(args: &[String], root: &Path) -> ExitCode {
                 Some(v) => baseline = Some(v.clone()),
                 None => return die("tbench: --baseline requires a value", 2),
             },
+            "--threshold-points" => match it.next() {
+                Some(v) => points = Some(v.clone()),
+                None => return die("tbench: --threshold-points requires a value", 2),
+            },
+            "--latest" => grouped = true,
             other if other.starts_with("--") => {
                 return die(&format!("tbench: unknown option '{other}'"), 2)
             }
+            _ if grouped => latest_files.push(arg.clone()),
             _ => files.push(arg.clone()),
         }
     }
 
-    if files.len() < 2 {
+    if grouped {
+        if threshold.is_none() {
+            return die("tbench: --latest is only valid with --threshold", 2);
+        }
+        if files.is_empty() || latest_files.is_empty() {
+            return die(
+                "tbench: --threshold with --latest needs at least one baseline run before --latest and one latest run after it",
+                2,
+            );
+        }
+        if format != "markdown" {
+            return die(
+                "tbench: --threshold with --latest prints a Markdown regression report only",
+                2,
+            );
+        }
+    } else if files.len() < 2 {
         return die("tbench: compare requires at least 2 JSON files", 2);
     }
-    for f in &files {
+    for f in files.iter().chain(&latest_files) {
         if !Path::new(f).is_file() {
             return die(&format!("tbench: file not found: {f}"), 2);
         }
@@ -1380,15 +1521,47 @@ pub fn cmd_compare(args: &[String], root: &Path) -> ExitCode {
             }
         },
     };
-    if threshold.is_some() && files.len() != 2 {
+    let abs_points = match points.as_deref() {
+        None => DEFAULT_ABS_POINTS,
+        Some(_) if threshold.is_none() => {
+            return die(
+                "tbench: --threshold-points is only valid with --threshold",
+                2,
+            )
+        }
+        Some(raw) => match parse_points(raw) {
+            Some(v) => v,
+            None => {
+                return die(
+                    &format!(
+                        "tbench: --threshold-points must be a number of percentage points, at least {MIN_ABS_POINTS}, got '{raw}'"
+                    ),
+                    2,
+                )
+            }
+        },
+    };
+    if threshold.is_some() && !grouped && files.len() != 2 {
         return die(
-            "tbench: --threshold requires exactly 2 files (baseline latest)",
+            "tbench: --threshold takes exactly 2 files (baseline latest), or groups of runs: BASELINE... --latest LATEST...",
             2,
         );
     }
+    if threshold.is_some() {
+        let (nb, nl) = if grouped {
+            (files.len(), latest_files.len())
+        } else {
+            (1, 1)
+        };
+        if nb < MIN_RUNS_FOR_SIGNIFICANCE || nl < MIN_RUNS_FOR_SIGNIFICANCE {
+            eprintln!(
+                "tbench: significance testing needs at least {MIN_RUNS_FOR_SIGNIFICANCE} runs per side (have {nb} baseline, {nl} latest); flagged rows fail on the threshold alone. Pass more runs as: compare --threshold PCT BASELINE... --latest LATEST..."
+            );
+        }
+    }
 
     let mut reports: Vec<Value> = Vec::new();
-    for f in &files {
+    for f in files.iter().chain(&latest_files) {
         match std::fs::read_to_string(f)
             .map_err(|e| e.to_string())
             .and_then(|t| serde_json::from_str::<Value>(&t).map_err(|e| e.to_string()))
@@ -1396,6 +1569,37 @@ pub fn cmd_compare(args: &[String], root: &Path) -> ExitCode {
             Ok(v) => reports.push(v),
             Err(e) => return die(&format!("tbench: failed to read {f}: {e}"), 2),
         }
+    }
+
+    if grouped {
+        let (baseline_runs, latest_runs) = reports.split_at(files.len());
+        let (text, code) = build_regression_report(
+            baseline_runs,
+            latest_runs,
+            &format!(
+                "{} baseline runs -> {} latest runs",
+                baseline_runs.len(),
+                latest_runs.len()
+            ),
+            GateConfig {
+                threshold: threshold_value.unwrap_or(0.0),
+                abs_points,
+            },
+        );
+        if let Some(out_path) = &output {
+            if let Some(dir) = out_path.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            if let Err(e) = std::fs::write(out_path, format!("{text}\n")) {
+                return die(
+                    &format!("tbench: failed to write {}: {e}", out_path.display()),
+                    1,
+                );
+            }
+            eprintln!("tbench: wrote {}", out_path.display());
+        }
+        println!("{text}");
+        return ExitCode::from(code);
     }
 
     let labels = column_labels(&reports);
@@ -1407,7 +1611,15 @@ pub fn cmd_compare(args: &[String], root: &Path) -> ExitCode {
     let mut exit_code: u8 = 0;
     let mut reg_text: Option<String> = None;
     if let Some(threshold) = threshold_value {
-        let (text, code) = build_regression_report(&reports, &labels, threshold);
+        let (text, code) = build_regression_report(
+            &reports[..1],
+            &reports[1..],
+            &format!("{} -> {}", labels[0], labels[1]),
+            GateConfig {
+                threshold,
+                abs_points,
+            },
+        );
         reg_text = Some(text);
         exit_code = code;
     }
@@ -1890,43 +2102,128 @@ mod tests {
         assert_eq!(parse_threshold("0"), Some(0.0));
     }
 
+    fn gate_row(metric: &str, unit: &str, median: f64, direction: &str) -> Value {
+        serde_json::json!({
+            "metric": metric, "shell": null, "unit": unit, "median": median,
+            "measurement": {"direction": direction}
+        })
+    }
+
+    fn gate_run(rows: Vec<Value>) -> Value {
+        serde_json::json!({ "results": rows })
+    }
+
+    const GATE: GateConfig = GateConfig {
+        threshold: 0.05,
+        abs_points: 5.0,
+    };
+
     #[test]
     fn regression_gate_fails_when_a_baseline_row_is_missing() {
-        let row = |metric: &str, median: f64| {
-            serde_json::json!({
-                "metric": metric, "shell": "zsh", "unit": "ms", "median": median,
-                "measurement": {"direction": "lower-is-better"}
-            })
-        };
-        let baseline = serde_json::json!({
-            "results": [row("shell.startup", 10.0), row("cmd.overhead", 5.0)]
-        });
-        let same = baseline.clone();
-        let dropped = serde_json::json!({"results": [row("shell.startup", 10.0)]});
-        let labels = vec!["a".to_string(), "b".to_string()];
+        let low = "lower-is-better";
+        let baseline = gate_run(vec![
+            gate_row("shell.startup", "ms", 10.0, low),
+            gate_row("cmd.overhead", "us", 5.0, low),
+        ]);
+        let dropped = gate_run(vec![gate_row("shell.startup", "ms", 10.0, low)]);
 
-        let (_, code) = build_regression_report(&[baseline.clone(), same], &labels, 0.1);
+        let same = [baseline.clone()];
+        let (_, code) = build_regression_report(&same, &same, "a -> b", GATE);
         assert_eq!(code, 0);
-        let (text, code) = build_regression_report(&[baseline, dropped], &labels, 0.1);
+        let (text, code) = build_regression_report(&same, &[dropped], "a -> b", GATE);
         assert_eq!(code, 3);
-        assert!(text.contains("- cmd.overhead (zsh) (ms)"), "{text}");
+        assert!(text.contains("- cmd.overhead (μs)"), "{text}");
     }
 
     #[test]
-    fn regression_uses_registered_direction() {
-        let baseline = serde_json::json!({
-            "median": 100.0,
-            "measurement": {"direction": "higher-is-better"}
-        });
-        let slower = serde_json::json!({"median": 80.0});
-        let faster = serde_json::json!({"median": 120.0});
-        assert_eq!(
-            regression_fraction("fire.fps", &baseline, &slower),
-            Some(0.2)
+    fn single_runs_fail_on_the_threshold_and_say_they_are_untested() {
+        let low = "lower-is-better";
+        let base = [gate_run(vec![gate_row("shell.startup", "ms", 10.0, low)])];
+        let slower = [gate_run(vec![gate_row("shell.startup", "ms", 11.0, low)])];
+        let (text, code) = build_regression_report(&base, &slower, "a -> b", GATE);
+        assert_eq!(code, 3);
+        assert!(text.contains("not tested (1 vs 1 runs)"), "{text}");
+        assert!(
+            text.contains("needs at least 4 runs on each side"),
+            "{text}"
         );
-        assert_eq!(
-            regression_fraction("fire.fps", &baseline, &faster),
-            Some(-0.2)
+    }
+
+    #[test]
+    fn run_level_test_passes_overlapping_runs_and_fails_separated_ones() {
+        let high = "higher-is-better";
+        let runs = |medians: &[f64]| -> Vec<Value> {
+            medians
+                .iter()
+                .map(|m| gate_run(vec![gate_row("render.throughput", "MBps", *m, high)]))
+                .collect()
+        };
+        let base = runs(&[100.0, 104.0, 96.0, 102.0]);
+
+        // Median drops 6.9% but one latest run sits inside the baseline range.
+        let noisy = runs(&[90.0, 101.0, 92.0, 96.0]);
+        let (text, code) = build_regression_report(&base, &noisy, "4 -> 4", GATE);
+        assert_eq!(code, 0, "{text}");
+        assert!(text.contains("| no (p="), "{text}");
+
+        let slower = runs(&[90.0, 91.0, 89.0, 92.0]);
+        let (text, code) = build_regression_report(&base, &slower, "4 -> 4", GATE);
+        assert_eq!(code, 3, "{text}");
+        assert!(text.contains("4 vs 4 runs"), "{text}");
+    }
+
+    #[test]
+    fn zero_baseline_percentage_rows_use_the_absolute_rule() {
+        let low = "lower-is-better";
+        let run = |cpu: f64| gate_run(vec![gate_row("resource.cpu", "pct", cpu, low)]);
+        let idle = [run(0.0)];
+
+        let (text, code) = build_regression_report(&idle, &[run(4.0)], "a -> b", GATE);
+        assert_eq!(code, 0, "{text}");
+        assert!(text.contains("more than 5.00 percentage points"), "{text}");
+
+        let (text, code) = build_regression_report(&idle, &[run(20.0)], "a -> b", GATE);
+        assert_eq!(code, 3);
+        assert!(
+            text.contains("| +20.00 pt | absolute: > 5.00 pt (baseline is 0) |"),
+            "{text}"
         );
+    }
+
+    #[test]
+    fn percentage_rows_ignore_moves_within_one_sampling_tick() {
+        let low = "lower-is-better";
+        let run = |cpu: f64| gate_run(vec![gate_row("resource.cpu", "pct", cpu, low)]);
+        // 1 -> 2 points is +100% but within the resolution of one window.
+        let (_, code) = build_regression_report(&[run(1.0)], &[run(2.0)], "a -> b", GATE);
+        assert_eq!(code, 0);
+        let (_, code) = build_regression_report(&[run(10.0)], &[run(20.0)], "a -> b", GATE);
+        assert_eq!(code, 3);
+    }
+
+    #[test]
+    fn zero_baseline_without_an_absolute_rule_is_listed_not_hidden() {
+        let low = "lower-is-better";
+        let base = [gate_run(vec![gate_row("scroll.proxy", "ms", 0.0, low)])];
+        let late = [gate_run(vec![gate_row("scroll.proxy", "ms", 9.0, low)])];
+        let (text, code) = build_regression_report(&base, &late, "a -> b", GATE);
+        assert_eq!(code, 0);
+        assert!(text.contains("Rows not evaluated"), "{text}");
+        assert!(text.contains("- scroll.proxy (ms)"), "{text}");
+    }
+
+    #[test]
+    fn worsening_follows_direction() {
+        assert_eq!(worsening(true, 100.0, 80.0), 20.0);
+        assert_eq!(worsening(true, 100.0, 120.0), -20.0);
+        assert_eq!(worsening(false, 100.0, 120.0), 20.0);
+    }
+
+    #[test]
+    fn points_threshold_has_a_floor_of_one_tick() {
+        assert_eq!(parse_points("5"), Some(5.0));
+        assert_eq!(parse_points("1"), Some(1.0));
+        assert_eq!(parse_points("0.5"), None);
+        assert_eq!(parse_points("x"), None);
     }
 }
