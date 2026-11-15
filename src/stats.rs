@@ -49,16 +49,17 @@ pub fn p95(samples: &[f64]) -> f64 {
     sorted[idx - 1]
 }
 
-/// 1.5×IQR outlier rejection (Tukey fence). Returns (removed_count, kept).
-/// Skips filtering below 4 samples (quartiles aren't meaningful that
-/// small) and never filters down to zero: a degenerate series keeps the
-/// unfiltered set instead.
+/// 1.5×IQR outlier rejection (Tukey fence). Returns (removed_count, kept),
+/// with `kept` in the order the samples were taken so drift across a run
+/// stays visible in stored samples. Skips filtering below 4 samples
+/// (quartiles aren't meaningful that small) and never filters down to
+/// zero: a degenerate series keeps the unfiltered set instead.
 pub fn iqr_filter(samples: &[f64]) -> (usize, Vec<f64>) {
     let mut sorted = samples.to_vec();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let n = sorted.len();
     if n < 4 {
-        return (0, sorted);
+        return (0, samples.to_vec());
     }
     // 1-based indices from the zsh implementation, clamped the same way.
     let q1_idx = ((n + 1) / 4).max(1);
@@ -69,13 +70,13 @@ pub fn iqr_filter(samples: &[f64]) -> (usize, Vec<f64>) {
     let lower = q1 - 1.5 * iqr;
     let upper = q3 + 1.5 * iqr;
 
-    let kept: Vec<f64> = sorted
+    let kept: Vec<f64> = samples
         .iter()
         .copied()
         .filter(|v| *v >= lower && *v <= upper)
         .collect();
     if kept.is_empty() {
-        return (0, sorted);
+        return (0, samples.to_vec());
     }
     let removed = n - kept.len();
     (removed, kept)
@@ -246,7 +247,7 @@ mod tests {
 
     #[test]
     fn iqr_keeps_small_sets() {
-        assert_eq!(iqr_filter(&[1.0, 100.0, 2.0]), (0, vec![1.0, 2.0, 100.0]));
+        assert_eq!(iqr_filter(&[1.0, 100.0, 2.0]), (0, vec![1.0, 100.0, 2.0]));
     }
 
     #[test]
@@ -256,6 +257,14 @@ mod tests {
         let (removed, kept) = iqr_filter(&v);
         assert_eq!(removed, 1);
         assert_eq!(kept.len(), 19);
+    }
+
+    #[test]
+    fn iqr_keeps_trial_order() {
+        let v = [12.0, 10.0, 11.0, 900.0, 10.5, 11.5, 10.2, 11.8];
+        let (removed, kept) = iqr_filter(&v);
+        assert_eq!(removed, 1);
+        assert_eq!(kept, vec![12.0, 10.0, 11.0, 10.5, 11.5, 10.2, 11.8]);
     }
 
     #[test]

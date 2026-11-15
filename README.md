@@ -202,7 +202,7 @@ percentage (`10%` or `10`); anything else is a usage error (exit `2`).
 By default `run` only keeps median/p95/stddev — the raw per-trial values
 are discarded once those are computed, keeping report size/shape exactly
 as before. `run --keep-samples` attaches each result's raw samples (in the
-result's own unit — the same values median/p95/stddev were computed from)
+result's own unit, in trial order — the same values median/p95/stddev were computed from)
 as a `"samples"` array, opt-in specifically because it changes JSON size
 (20 trials ≈ 20 extra numbers per result).
 
