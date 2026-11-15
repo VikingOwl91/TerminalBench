@@ -12,6 +12,10 @@ metadata, adaptive `--runs auto`), the §E `orchestrate` subcommand for
 sequential multi-emulator runs, the §C synchronized-output probe, and the
 §F statistics (`--keep-samples`, bootstrap CI, Mann-Whitney significance).
 
+Upgrading from an earlier build? Several metrics and the regression gate
+changed in ways that make old baselines incomparable:
+[`docs/upgrade-notes.md`](docs/upgrade-notes.md).
+
 ## Usage
 
 ```sh
