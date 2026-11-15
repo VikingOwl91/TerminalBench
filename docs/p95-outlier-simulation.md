@@ -41,3 +41,10 @@ Bias and RMSE are percentages of the population p95.
   the fast and the slow mode (RMSE above 50%).
 - **The median barely moves.** Filtering shifts it by under half a percent
   in every case.
+
+## Decision
+
+p95 is computed from every timed trial; median and stddev keep the filter.
+It is never reported below the median, which Reporting Spec v1 requires.
+For metrics where higher is better the same rule applies to the derived
+values, so p95 there is the fast tail.

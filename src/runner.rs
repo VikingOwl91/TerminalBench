@@ -103,12 +103,13 @@ fn run_shell(scenario: &Scenario, cfg: &RunConfig, results: &mut Vec<ResultRow>)
         // ms -> scenario unit (only "us" needs scaling today).
         let scale = if unit == "us" { 1000.0 } else { 1.0 };
         let scaled: Vec<f64> = c.samples_ms.iter().map(|v| v * scale).collect();
+        let raw_scaled: Vec<f64> = c.raw_ms.iter().map(|v| v * scale).collect();
         results.push(ResultRow {
             metric: metric.clone(),
             shell: Some(shell.clone()),
             unit: unit.clone(),
             median: stats::median(&scaled),
-            p95: stats::p95(&scaled),
+            p95: stats::tail_p95(&raw_scaled, stats::median(&scaled)),
             stddev: stats::stddev(&scaled),
             runs: scaled.len(),
             outliers_removed: c.outliers_removed,
@@ -258,13 +259,22 @@ fn run_render_throughput(
             eprintln!("tbench: render.throughput/{variant} produced no usable samples");
             continue;
         }
-        for (unit, samples) in [("MBps", &mbps), ("linesps", &linesps)] {
+        let raw_secs = c.raw_ms.iter().filter(|t| **t > 0.0).map(|t| t / 1000.0);
+        let raw_mbps: Vec<f64> = raw_secs
+            .clone()
+            .map(|s| (size_bytes / 1_000_000.0) / s)
+            .collect();
+        let raw_linesps: Vec<f64> = raw_secs.map(|s| line_count / s).collect();
+        for (unit, samples, raw) in [
+            ("MBps", &mbps, &raw_mbps),
+            ("linesps", &linesps, &raw_linesps),
+        ] {
             results.push(ResultRow {
                 metric: metric.clone(),
                 shell: None,
                 unit: unit.to_string(),
                 median: stats::median(samples),
-                p95: stats::p95(samples),
+                p95: stats::tail_p95(raw, stats::median(samples)),
                 stddev: stats::stddev(samples),
                 runs: c.samples_ms.len(),
                 outliers_removed: c.outliers_removed,
@@ -317,7 +327,7 @@ fn run_scroll_proxy(scenario: &Scenario, cfg: &RunConfig, results: &mut Vec<Resu
         shell: None,
         unit,
         median: stats::median(&c.samples_ms),
-        p95: stats::p95(&c.samples_ms),
+        p95: stats::tail_p95(&c.raw_ms, stats::median(&c.samples_ms)),
         stddev: stats::stddev(&c.samples_ms),
         runs: c.samples_ms.len(),
         outliers_removed: c.outliers_removed,
