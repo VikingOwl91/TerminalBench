@@ -3,6 +3,7 @@
 //! output conventions match the zsh/python implementation it replaces;
 //! docs/reporting-spec-v1.md remains the wire contract.
 
+mod aa;
 mod compare;
 mod fidelity;
 mod fire;
@@ -36,6 +37,8 @@ Usage:
   tbench compare BASELINE.json LATEST.json --threshold 10%
   tbench compare --threshold 10% BASELINE.json ... --latest LATEST.json ...
   tbench trend [FILE ...] [--format markdown|html] [--output PATH]
+  tbench aa [--repeats N] [--scenario NAME] [--runs N] [--thresholds LIST]
+  tbench aa --from FILE FILE [FILE ...] [--thresholds LIST]
   tbench orchestrate --apps Ghostty,iTerm,Terminal [--scenario NAME] [--runs N]
                       [--format markdown|html] [--output-dir PATH] [--timeout N]
   tbench -h | --help
@@ -111,6 +114,24 @@ Options (trend):
                     written to --output or results/trend-<timestamp>.html)
   --output PATH     Write the report to PATH (in addition to stdout for markdown)
 
+Options (aa) — A/A self-check of the regression gate:
+  Runs one configuration several times and reports how far identical runs
+  drift apart and how often the gate would fail one half of them against
+  the other. Every such failure is noise, so this shows which --threshold
+  the machine supports.
+  --repeats N       Runs to take (default: 8, the fewest that give the gate
+                    4 runs per side for its significance test)
+  --scenario NAME, --shells LIST, --runs N, --settle N, --warmup N
+                    Passed through to each `tbench run`
+  --from FILE ...   Analyse existing reports of one configuration instead
+                    of running
+  --thresholds LIST Comma-separated percentages to evaluate (default:
+                    0,2,5,10)
+  --min-points N    Point floor for percentage-unit rows, to see what the
+                    gate's fixed 1-point floor does (default: 1)
+  --output-dir PATH Where the run reports go (default: results/aa-<timestamp>/)
+  --output PATH     Also write the Markdown report to PATH
+
 Options (orchestrate) — macOS only:
   --apps LIST       Comma-separated app names to run in sequence, one fresh
                     window/instance each (supported: ghostty, iterm, terminal, noa)
@@ -176,6 +197,7 @@ fn main() -> ExitCode {
         Some("show") => cmd_show(&args[1..]),
         Some("compare") => compare::cmd_compare(&args[1..], &root_dir()),
         Some("trend") => trend::cmd_trend(&args[1..], &root_dir()),
+        Some("aa") => aa::cmd_aa(&args[1..], &root_dir()),
         Some("orchestrate") => orchestrate::cmd_orchestrate(&args[1..], &root_dir()),
         Some("validate") => validate::cmd_validate(&args[1..], &root_dir()),
         Some("__smoke-report") => {
