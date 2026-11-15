@@ -104,7 +104,13 @@ Real usage surfaced four ways the numbers themselves could be polluted;
   concurrent Xcode build, Time Machine, etc.).
 - **Warmup + IQR outlier filtering**: `--warmup N` (default 3) discarded
   trials run before timing starts, and samples more than 1.5×IQR outside
-  the interquartile range are dropped before computing median/p95/stddev.
+  the interquartile range are dropped before computing median and stddev.
+  **p95 is computed from every timed trial**, filtered or not: filtering
+  first biased it about 4% low and hid slow trials that belong to the
+  workload ([`docs/p95-outlier-simulation.md`](docs/p95-outlier-simulation.md)).
+  At the default 20 trials p95 is the second-largest value and lands below
+  the true 95th percentile in about three of four runs; treat it as a tail
+  figure only from roughly 50 trials (`--runs 50`).
   The removed count is reported per result as `"outliers_removed"` (always
   present, `0` when not applicable — `resource.*` and `fire.fps`).
 - **Adaptive sampling** (`--runs auto`, for `shell.startup`/`cmd.overhead`/
@@ -229,7 +235,7 @@ a quarter of the time; see [`docs/aa-baseline.md`](docs/aa-baseline.md).
 By default `run` only keeps median/p95/stddev — the raw per-trial values
 are discarded once those are computed, keeping report size/shape exactly
 as before. `run --keep-samples` attaches each result's raw samples (in the
-result's own unit, in trial order — the same values median/p95/stddev were computed from)
+result's own unit, in trial order — the retained trials median and stddev were computed from; p95 also covers the dropped ones)
 as a `"samples"` array, opt-in specifically because it changes JSON size
 (20 trials ≈ 20 extra numbers per result).
 

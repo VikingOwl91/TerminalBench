@@ -49,6 +49,16 @@ pub fn p95(samples: &[f64]) -> f64 {
     sorted[idx - 1]
 }
 
+/// p95 for a result row: taken from every timed trial, not from the
+/// outlier-filtered set. The filter exists to steady the median; applied
+/// before a tail statistic it removes the tail and biases p95 low (see
+/// docs/p95-outlier-simulation.md). Never below the reported median, which
+/// Reporting Spec v1 requires and which can only differ when the filter
+/// dropped fast trials.
+pub fn tail_p95(all_trials: &[f64], filtered_median: f64) -> f64 {
+    p95(all_trials).max(filtered_median)
+}
+
 /// 1.5×IQR outlier rejection (Tukey fence). Returns (removed_count, kept),
 /// with `kept` in the order the samples were taken so drift across a run
 /// stays visible in stored samples. Skips filtering below 4 samples
@@ -238,6 +248,18 @@ mod tests {
         assert_eq!(p95(&v), 19.0); // (20*95+99)/100 = 19
         let v: Vec<f64> = (1..=10).map(|i| i as f64).collect();
         assert_eq!(p95(&v), 10.0); // (10*95+99)/100 = 10
+    }
+
+    #[test]
+    fn tail_p95_sees_trials_the_filter_dropped() {
+        let mut raw: Vec<f64> = (0..18).map(|i| 10.0 + (i % 3) as f64).collect();
+        raw.extend([40.0, 45.0]);
+        let (removed, kept) = iqr_filter(&raw);
+        assert_eq!(removed, 2);
+        assert_eq!(p95(&kept), 12.0);
+        assert_eq!(tail_p95(&raw, median(&kept)), 40.0);
+        // never below the median it is reported with
+        assert_eq!(tail_p95(&[1.0, 2.0], 5.0), 5.0);
     }
 
     #[test]

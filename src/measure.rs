@@ -143,7 +143,10 @@ fn run_once_with_timeout(argv: &[String], sink: Sink, timeout: Duration) -> std:
 pub struct Collected {
     pub backend: &'static str,
     pub outliers_removed: usize,
+    /// Trials kept by the outlier filter, in trial order.
     pub samples_ms: Vec<f64>,
+    /// Every timed trial, in trial order. p95 is computed from these.
+    pub raw_ms: Vec<f64>,
 }
 
 /// Fixed-count collection: warmup trials discarded, then `runs` timed
@@ -166,6 +169,7 @@ pub fn collect_fixed(
         backend: BACKEND_TIMER,
         outliers_removed: removed,
         samples_ms: kept,
+        raw_ms: samples,
     })
 }
 
@@ -195,6 +199,7 @@ pub fn collect_adaptive(argv: &[String], warmup: usize, sink: Sink) -> std::io::
         backend: BACKEND_TIMER,
         outliers_removed,
         samples_ms,
+        raw_ms: raw,
     })
 }
 

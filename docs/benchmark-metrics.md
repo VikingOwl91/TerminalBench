@@ -16,7 +16,12 @@ Common behavior:
   `measurement.direction` is the authoritative source.
 - Process-timed trials get a warmup (default 3 discarded
   runs) and 1.5×IQR outlier filtering. The removed count is recorded per
-  result as `outliers_removed`. `resource.*` point samples and duration-
+  result as `outliers_removed`. The filter applies to median and stddev
+  only; **p95 is taken from every timed trial**, because filtering first
+  removes the tail it is meant to describe
+  ([p95-outlier-simulation.md](p95-outlier-simulation.md)). With fewer than
+  about 50 trials p95 is a coarse figure: at 20 it is the second-largest
+  trial. `resource.*` point samples and duration-
   based `fire.fps` trials do not use this filter.
 - A `--settle` pause (default 2s) separates scenarios and variants so one
   measurement's leftover load doesn't pollute the next one's first samples.
