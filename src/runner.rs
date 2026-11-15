@@ -19,6 +19,9 @@ pub struct RunConfig {
     pub warmup: usize,
     pub settle_secs: f64,
     pub keep_samples: bool,
+    /// Vendor data a scenario wants in the report's top-level `extensions`
+    /// object, keyed by reverse-DNS name.
+    pub extensions: std::cell::RefCell<serde_json::Map<String, serde_json::Value>>,
 }
 
 pub fn settle(cfg: &RunConfig) {
