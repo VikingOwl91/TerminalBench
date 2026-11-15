@@ -156,7 +156,8 @@ docs/benchmark-metrics.md.
 "#
 }
 
-/// Repo root: the directory holding scenarios/. Resolved from the binary's
+/// Working root: where results/ lives and where a scenarios/ directory, if
+/// present, overrides the bundled scenarios. Resolved from the binary's
 /// location (target/*/tbench or an installed copy next to scenarios/),
 /// falling back to the current directory.
 fn root_dir() -> PathBuf {
@@ -216,13 +217,13 @@ fn main() -> ExitCode {
             );
             ExitCode::SUCCESS
         }
-        Some("__flood") => {
-            // Internal: background output flood for loaded/load variants.
-            match args.get(1) {
-                Some(f) => measure::flood_main(Path::new(f)),
-                None => ExitCode::from(2),
-            }
-        }
+        // Internal: background output flood for load variants.
+        Some("__flood") => measure::flood_main(),
+        // Internal: one timed write of a fixture to the tty.
+        Some("__emit") => match args.get(1) {
+            Some(variant) => measure::emit_main(variant),
+            None => ExitCode::from(2),
+        },
         Some("-h") | Some("--help") => {
             println!("{}", usage());
             ExitCode::SUCCESS
@@ -313,37 +314,36 @@ fn cmd_run(args: &[String]) -> ExitCode {
         Err(e) => return die(&e, 1),
     };
 
+    let all = match scenario::load_all(&root) {
+        Ok(s) if !s.is_empty() => s,
+        Ok(_) => {
+            return die(
+                &format!(
+                    "tbench: no scenarios found in {}/scenarios/",
+                    root.display()
+                ),
+                1,
+            )
+        }
+        Err(e) => return die(&format!("tbench: failed to list scenarios: {e}"), 1),
+    };
     let scenarios = match scenario_name {
         Some(name) => {
-            let f = root.join(format!("scenarios/{name}.yaml"));
-            if !f.is_file() {
-                return die_usage(&format!(
-                    "tbench: unknown scenario '{name}' (expected {})",
-                    f.display()
-                ));
-            }
-            match scenario::Scenario::load(&f) {
-                Ok(s) => vec![s],
-                Err(e) => return die(&format!("tbench: failed to load {}: {e}", f.display()), 1),
+            let names: Vec<String> = all.iter().map(|sc| sc.name.clone()).collect();
+            match all.into_iter().find(|sc| sc.name == name) {
+                Some(sc) => vec![sc],
+                None => {
+                    return die_usage(&format!(
+                        "tbench: unknown scenario '{name}' (available: {})",
+                        names.join(", ")
+                    ))
+                }
             }
         }
-        None => match scenario::load_all(&root) {
-            Ok(s) if !s.is_empty() => s,
-            Ok(_) => {
-                return die(
-                    &format!(
-                        "tbench: no scenarios found in {}/scenarios/",
-                        root.display()
-                    ),
-                    1,
-                )
-            }
-            Err(e) => return die(&format!("tbench: failed to list scenarios: {e}"), 1),
-        },
+        None => all,
     };
 
     let cfg = runner::RunConfig {
-        root: root.clone(),
         shells: shells
             .split(',')
             .map(str::to_string)

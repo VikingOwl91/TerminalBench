@@ -216,12 +216,7 @@ fn run_linux(scenario: &Scenario, cfg: &RunConfig, results: &mut Vec<ResultRow>)
     for variant in ["idle", "load"] {
         let mut flood = None;
         if variant == "load" {
-            let fixture = cfg.root.join("fixtures/large-output-plain.txt");
-            if !crate::runner::gen_fixtures(&cfg.root) {
-                eprintln!("tbench: resource.*/load requires a valid flood fixture, skipping");
-                continue;
-            }
-            match measure::flood_start(&fixture) {
+            match measure::flood_start() {
                 Ok(f) => flood = Some(f),
                 Err(e) => {
                     eprintln!(
@@ -343,12 +338,7 @@ pub fn run(scenario: &Scenario, cfg: &RunConfig, results: &mut Vec<ResultRow>) -
     for variant in ["idle", "load"] {
         let mut flood = None;
         if variant == "load" {
-            let fixture = cfg.root.join("fixtures/large-output-plain.txt");
-            if !crate::runner::gen_fixtures(&cfg.root) {
-                eprintln!("tbench: resource.*/load requires a valid flood fixture, skipping");
-                continue;
-            }
-            match measure::flood_start(&fixture) {
+            match measure::flood_start() {
                 Ok(f) => flood = Some(f),
                 Err(e) => {
                     eprintln!(

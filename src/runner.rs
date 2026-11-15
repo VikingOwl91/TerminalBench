@@ -1,19 +1,17 @@
-//! Scenario dispatch — port of lib/runner.sh. Loads each scenarios/*.yaml,
-//! dispatches on `kind`, and appends ResultRows. Settle pauses between
+//! Scenario dispatch: runs one scenario by its `kind` and appends
+//! ResultRows. Settle pauses between
 //! scenarios/variants (proposal §A item 1) are the caller's/our shared
 //! guard against cross-contamination.
 
 use std::fs::File;
-use std::io::{BufRead, BufReader, Read, Write};
 use std::path::{Path, PathBuf};
 
-use crate::measure::{self, Runs, Sink};
+use crate::measure::{self, Runs};
 use crate::report::ResultRow;
 use crate::scenario::Scenario;
 use crate::stats;
 
 pub struct RunConfig {
-    pub root: PathBuf,
     pub shells: Vec<String>,
     pub runs: Runs,
     pub warmup: usize,
@@ -93,7 +91,7 @@ fn run_shell(scenario: &Scenario, cfg: &RunConfig, results: &mut Vec<ResultRow>)
         };
         let cmd = cmd_template.replace("{shell}", &shell_bin.to_string_lossy());
         let argv = measure::split_command(&cmd);
-        let c = match measure::collect(&argv, cfg.runs, cfg.warmup, Sink::Null) {
+        let c = match measure::collect(&argv, cfg.runs, cfg.warmup) {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("tbench: failed to run '{cmd}': {e}; skipping {metric} ({shell})");
@@ -123,86 +121,6 @@ fn run_shell(scenario: &Scenario, cfg: &RunConfig, results: &mut Vec<ResultRow>)
     produced
 }
 
-// --- fixtures ------------------------------------------------------------
-
-const FIXTURE_LINES: usize = 100_000;
-const LINE_TEXT: &str = "the quick brown fox jumps over the lazy dog 0123456789 abcdefghijklmnopqrstuvwxyz tbench-render-throughput-fixture-line";
-const LINE_CJK: &str = "こんにちは、世界🌏 The quick brown 狐 jumps over 怠け者の犬 ASCII0123456789 絵文字✨🚀 全角テストtbench-cjk-fixture-line";
-
-fn fixture_is_valid(path: &Path, line: &str, wrap_ansi: bool) -> std::io::Result<bool> {
-    let mut expected = Vec::new();
-    if wrap_ansi {
-        expected.extend_from_slice(b"\x1b[32m");
-    }
-    expected.extend_from_slice(line.as_bytes());
-    if wrap_ansi {
-        expected.extend_from_slice(b"\x1b[0m");
-    }
-    expected.push(b'\n');
-
-    let meta = path.metadata()?;
-    if !meta.is_file() || meta.len() != (expected.len() * FIXTURE_LINES) as u64 {
-        return Ok(false);
-    }
-    let mut reader = BufReader::new(File::open(path)?);
-    let mut actual = Vec::with_capacity(expected.len());
-    for _ in 0..FIXTURE_LINES {
-        actual.clear();
-        reader.read_until(b'\n', &mut actual)?;
-        if actual != expected {
-            return Ok(false);
-        }
-    }
-    let mut trailing = [0u8; 1];
-    Ok(reader.read(&mut trailing)? == 0)
-}
-
-/// Byte-identical port of fixtures/gen-fixtures.sh: validates and lazily
-/// generates the three large-output fixtures on first use. A truncated or
-/// modified fixture is rebuilt instead of being accepted merely as nonempty.
-pub fn gen_fixtures(root: &Path) -> bool {
-    let dir = root.join("fixtures");
-    if let Err(e) = std::fs::create_dir_all(&dir) {
-        eprintln!("tbench: could not create fixture directory: {e}");
-        return false;
-    }
-    let write = |path: &Path, line: &str, wrap_ansi: bool| -> std::io::Result<()> {
-        match fixture_is_valid(path, line, wrap_ansi) {
-            Ok(true) => return Ok(()),
-            Ok(false) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e),
-        }
-        let mut out = std::io::BufWriter::new(File::create(path)?);
-        for _ in 0..FIXTURE_LINES {
-            if wrap_ansi {
-                out.write_all(b"\x1b[32m")?;
-            }
-            out.write_all(line.as_bytes())?;
-            if wrap_ansi {
-                out.write_all(b"\x1b[0m")?;
-            }
-            out.write_all(b"\n")?;
-        }
-        out.flush()?;
-        if fixture_is_valid(path, line, wrap_ansi)? {
-            Ok(())
-        } else {
-            Err(std::io::Error::other(format!(
-                "generated fixture failed validation: {}",
-                path.display()
-            )))
-        }
-    };
-    let ok = write(&dir.join("large-output-plain.txt"), LINE_TEXT, false).is_ok()
-        && write(&dir.join("large-output-ansi.txt"), LINE_TEXT, true).is_ok()
-        && write(&dir.join("large-output-cjk.txt"), LINE_CJK, false).is_ok();
-    if !ok {
-        eprintln!("tbench: fixture generation failed");
-    }
-    ok
-}
-
 // --- kind: render_throughput ---------------------------------------------
 
 fn run_render_throughput(
@@ -215,31 +133,18 @@ fn run_render_throughput(
         .unwrap_or("render.throughput")
         .to_string();
     let notes = scenario.field("notes").map(str::to_string);
-    if !gen_fixtures(&cfg.root) {
-        eprintln!("tbench: fixture generation failed, skipping render.throughput");
-        return false;
-    }
 
     let mut produced = false;
     for (i, variant) in ["plain", "ansi", "cjk"].iter().enumerate() {
         if i > 0 {
             settle(cfg);
         }
-        let fixture = cfg
-            .root
-            .join(format!("fixtures/large-output-{variant}.txt"));
-        let Ok(meta) = fixture.metadata() else {
-            eprintln!(
-                "tbench: fixture {} missing, skipping render.throughput/{variant}",
-                fixture.display()
-            );
+        let Some(size_bytes) = measure::fixture_bytes(variant).map(|data| data.len() as f64) else {
             continue;
         };
-        let size_bytes = meta.len() as f64;
-        let line_count = FIXTURE_LINES as f64;
+        let line_count = measure::FIXTURE_LINES as f64;
 
-        let argv = vec!["cat".to_string(), fixture.to_string_lossy().into_owned()];
-        let c = match measure::collect(&argv, cfg.runs, cfg.warmup, Sink::Terminal) {
+        let c = match measure::collect_emit(variant, cfg.runs, cfg.warmup) {
             Ok(c) => c,
             Err(e) => {
                 eprintln!("tbench: render.throughput/{variant} failed: {e}; skipping");
@@ -298,20 +203,7 @@ fn run_scroll_proxy(scenario: &Scenario, cfg: &RunConfig, results: &mut Vec<Resu
         .to_string();
     let unit = scenario.field("unit").unwrap_or("ms").to_string();
     let notes = scenario.field("notes").map(str::to_string);
-    if !gen_fixtures(&cfg.root) {
-        eprintln!("tbench: fixture generation failed, skipping scroll.proxy");
-        return false;
-    }
-    let fixture = cfg.root.join("fixtures/large-output-plain.txt");
-    if !fixture.exists() {
-        eprintln!(
-            "tbench: fixture {} missing, skipping scroll.proxy",
-            fixture.display()
-        );
-        return false;
-    }
-    let argv = vec!["cat".to_string(), fixture.to_string_lossy().into_owned()];
-    let c = match measure::collect(&argv, cfg.runs, cfg.warmup, Sink::Terminal) {
+    let c = match measure::collect_emit("plain", cfg.runs, cfg.warmup) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("tbench: scroll.proxy failed: {e}; skipping");
@@ -456,17 +348,5 @@ mod tests {
         for invalid in ["0", "-1", "60.1", "NaN", "inf", "not-a-number"] {
             assert!(parse_fire_secs(Some(invalid)).is_err(), "{invalid}");
         }
-    }
-
-    #[test]
-    fn incomplete_fixture_is_rejected() {
-        let path = std::env::temp_dir().join(format!(
-            "tbench-invalid-fixture-{}-{}",
-            std::process::id(),
-            std::thread::current().name().unwrap_or("test")
-        ));
-        std::fs::write(&path, b"not the complete fixture\n").unwrap();
-        assert!(!fixture_is_valid(&path, LINE_TEXT, false).unwrap());
-        let _ = std::fs::remove_file(path);
     }
 }
