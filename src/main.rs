@@ -423,6 +423,11 @@ fn cmd_run(args: &[String]) -> ExitCode {
     let sync_output = fidelity::probe_sync_output();
     let doc = report::build_report(&results, sync_output, app.as_deref(), cfg.extensions.take());
     let json = serde_json::to_string_pretty(&doc).expect("report serialization");
+    if doc["run_context"]["environment"]["display_refresh_hz"]["status"] == "unknown"
+        && results.iter().any(|row| report::is_tty_bound(&row.metric))
+    {
+        eprintln!("tbench: display refresh rate is unknown, so the comparability gate will answer UNDETERMINED for render.throughput, scroll.proxy and fire.fps. Set it for the run, e.g. TBENCH_DISPLAY_REFRESH_HZ=60");
+    }
 
     let output = output.unwrap_or_else(|| {
         root.join(format!(
