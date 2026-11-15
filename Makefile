@@ -20,8 +20,8 @@ debug: ## Debug build
 
 test: unit conformance ## All tests (Rust unit tests + Reporting Spec v1 suite)
 
-unit: ## Rust unit tests
-	$(CARGO) test
+unit: ## Rust unit and integration tests (TEST_ARGS="-- --nocapture" shows what the pty tests observed)
+	$(CARGO) test $(TEST_ARGS)
 
 conformance: build ## Reporting Spec v1 regression suite (tests/report-v1.sh)
 	zsh tests/report-v1.sh

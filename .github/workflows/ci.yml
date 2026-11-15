@@ -25,9 +25,10 @@ jobs:
       - name: Lint
         run: make lint
       - name: Unit and integration tests
-        # On Linux this includes tests/pty_run.rs, which runs the whole
-        # suite inside a pty so tty-bound scenarios are not skipped here.
-        run: make unit
+        # Includes tests/pty_run.rs, which runs the whole suite inside a
+        # pty so tty-bound scenarios are not skipped on a runner without a
+        # terminal. --nocapture puts the rows each run produced in the log.
+        run: make unit TEST_ARGS="-- --nocapture"
       - name: Reporting Spec v1 suite
         # Explicit controls stand in for what discovery can't provide on a
         # headless runner (see README "Reporting Specification v1").
