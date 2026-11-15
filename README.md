@@ -16,6 +16,10 @@ Disclosure: the upstream author of TerminalBench also develops
 [Noa](https://github.com/simota/noa), one of the terminal emulators this
 tool can benchmark (`orchestrate` ships a `noa` adapter).
 
+Upgrading from an earlier build? Several metrics and the regression gate
+changed in ways that make old baselines incomparable:
+[`docs/upgrade-notes.md`](docs/upgrade-notes.md).
+
 ## Usage
 
 ```sh
