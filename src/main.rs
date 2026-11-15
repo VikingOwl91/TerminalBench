@@ -38,7 +38,7 @@ Usage:
   tbench compare FILE FILE [FILE ...] [--format markdown|html] [--output PATH] [--baseline NAME]
   tbench compare BASELINE.json LATEST.json --threshold 10%
   tbench compare --threshold 10% BASELINE.json ... --latest LATEST.json ...
-  tbench trend [FILE ...] [--format markdown|html] [--output PATH]
+  tbench trend [FILE ...] [--format markdown|html] [--output PATH] [--noise PCT]
   tbench aa [--repeats N] [--scenario NAME] [--runs N] [--thresholds LIST]
   tbench aa --from FILE FILE [FILE ...] [--thresholds LIST]
   tbench orchestrate --apps Ghostty,iTerm,Terminal [--scenario NAME] [--runs N]
@@ -115,6 +115,10 @@ Options (trend):
   --format FORMAT   "markdown" (default) or "html" (line-chart report,
                     written to --output or results/trend-<timestamp>.html)
   --output PATH     Write the report to PATH (in addition to stdout for markdown)
+  --noise PCT       Markdown: a change is called better or worse only beyond
+                    this band (default: 5%); smaller ones are marked "within
+                    noise". Percentage-unit rows use 1 point. `tbench aa`
+                    shows what a setup needs
 
 Options (aa) — A/A self-check of the regression gate:
   Runs one configuration several times and reports how far identical runs
