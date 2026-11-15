@@ -55,7 +55,7 @@
           "バージョン付きJSON性能レポート",
           "主張の境界に対する意味的検証",
           "ペアごとの適格性判定：COMPARABLE、NOT_COMPARABLE、UNDETERMINED",
-          "ベースライン比オーバービュー、中央値と方向考慮型competition rank（中央値が完全に同値なら同順位）を示すResults at a glance、指標別dot-and-intervalチャート、勝敗集計を備えた自己完結型HTML比較レポート",
+          "ベースライン比オーバービュー、中央値と方向考慮型competition rank（中央値が完全に同値なら同順位）を示すResults at a glance、指標別dot-and-intervalチャートを備えた自己完結型HTML比較レポート",
           "レポート履歴を横断する経時トレンドレポート"
         ]
       }
@@ -154,7 +154,7 @@ bin/tbench-validate validate results/report-b.json</code></pre>
             <li>
               <p class="step-number">04 / 比較</p>
               <h3>COMPARABLEの後にだけ値を提示する</h3>
-              <p>コンパレーターはMarkdownテーブル、または<code>--format html</code>で自己完結型のチャートレポート（<code>--baseline</code>で基準を選べるベースライン比オーバービュー、中央値と方向考慮型competition rankを示すResults at a glanceテーブル（中央値が完全に同値なら同順位）、指標別dot-and-intervalチャート（サンプルありではbootstrap 95% CI、なしでは中央値からp95までのwhisker）、勝敗集計）として値を提示します。検証や適格性判定の代わりにはなりません。</p>
+              <p>コンパレーターはMarkdownテーブル、または<code>--format html</code>で自己完結型のチャートレポート（<code>--baseline</code>で基準を選べるベースライン比オーバービュー、中央値と方向考慮型competition rankを示すResults at a glanceテーブル（中央値が完全に同値なら同順位）、指標別dot-and-intervalチャート（サンプルありではbootstrap 95% CI、なしでは中央値からp95までのwhisker））として値を提示します。検証や適格性判定の代わりにはなりません。</p>
               <pre><code>bin/tbench compare results/report-a.json results/report-b.json --format html</code></pre>
             </li>
           </ol>
