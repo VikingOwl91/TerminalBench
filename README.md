@@ -585,8 +585,11 @@ make check        # lint + test — what CI runs
 ```
 
 CI (`.github/workflows/ci.yml`) runs `make lint`, `make unit`, and the
-conformance suite on a macOS runner with the explicit `TBENCH_*` controls
-from the section above.
+conformance suite on Linux and macOS runners with the explicit `TBENCH_*`
+controls from the section above. Runners have no controlling terminal, so
+on Linux `tests/pty_run.rs` runs the whole suite inside a pty it owns with
+`--strict`: a tty-bound scenario that stops producing results fails CI
+instead of being skipped.
 
 ## Requirements
 
@@ -631,6 +634,7 @@ src/validate.rs      # Reporting Spec v1 reference validator
 scenarios/           # *.yaml scenario definitions
 schemas/             # tbench-report-v1.schema.json (Reporting Spec v1)
 tests/report-v1.sh   # Reporting Spec v1 conformance suite (make conformance)
+tests/pty_run.rs     # Linux: full run inside a pty, so CI covers tty-bound scenarios
 docs/                # proposals, metric guide, reporting spec
 fixtures/            # generated *.txt (gitignored) + conformance/ corpus
 results/             # JSON/HTML output + .tbench.lock (gitignored)
