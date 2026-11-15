@@ -50,8 +50,8 @@ Options (run):
   --settle N        Seconds to pause between scenarios/variants (default: 2);
                     resource.*'s idle sampling always waits at least 5s
                     regardless, to let macOS's decayed %cpu average cool down
-  --warmup N        Discarded warmup trials for process-timed and PTY-echo
-                    metrics (default: 3; not used by resource.* or fire.fps)
+  --warmup N        Discarded warmup trials for process-timed metrics
+                    (default: 3; not used by resource.* or fire.fps)
   --keep-samples    Attach each result's raw per-trial samples as a
                     "samples" array in the JSON (default: off); needed for
                     `compare`'s significance testing and bootstrap CI
@@ -109,13 +109,13 @@ Options (orchestrate) — macOS only:
 Metrics:
   shell-scoped:      shell.startup, cmd.overhead
   terminal-scoped:   render.throughput (plain/ansi/cjk variants),
-                     scroll.proxy, input.latency (idle/loaded variants),
+                     scroll.proxy,
                      resource.mem, resource.cpu (idle/load variants),
                      fire.fps (duration-based, see scenarios/fire.yaml)
                      (approximate/proxy — see README.md)
 
-Backend: built-in monotonic timer ("rust-timer"); input.latency uses a
-native pty round trip ("rust-pty"). See docs/benchmark-metrics.md.
+Backend: built-in monotonic timer ("rust-timer"). See
+docs/benchmark-metrics.md.
 "#
 }
 

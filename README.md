@@ -5,7 +5,7 @@ and terminal-emulator draw/input/resource characteristics. Implementation of
 proposal recommendation C (`docs/proposal-terminal-bench.md`), MVP scope
 plus the extension-1 emulator metrics (§3 items 1-3), the extension-2
 `compare` subcommand (§6.4/§6.6), further emulator-focused metrics
-(CJK/emoji rendering, loaded-vs-idle input latency, resource footprint),
+(CJK/emoji rendering, resource footprint),
 the measurement-quality hardening from `docs/proposal-detailed-benchmark.md`
 §A (settle, concurrent-run detection, warmup/outlier filtering, environment
 metadata, adaptive `--runs auto`), the §E `orchestrate` subcommand for
@@ -81,8 +81,7 @@ Real usage surfaced four ways the numbers themselves could be polluted;
 
 - **Settle between scenarios and variants** (`--settle N`, default 2s):
   `run` pauses `N` seconds between scenario files, and `render.throughput`
-  pauses between its `plain`/`ansi`/`cjk` variants and `input.latency`
-  between `idle`/`loaded`, so one variant's leftover load (a flood still
+  pauses between its `plain`/`ansi`/`cjk` variants, so one variant's leftover load (a flood still
   draining, a decaying CPU average) doesn't bleed into the next
   measurement's first samples. `resource.mem`/`resource.cpu`'s `idle`
   sampling specifically waits **at least 5s** regardless of `--settle`
@@ -110,8 +109,8 @@ Real usage surfaced four ways the numbers themselves could be polluted;
   is within 5% of the median, or 50 total trials are reached — noisier
   metrics (e.g. `cmd.overhead`, whose fork/exec cost has high relative
   variance) will often hit the 50-trial cap rather than converge early,
-  which is an expected, not a failed, outcome. `input.latency` and
-  `resource.*` don't support `auto` yet and fall back to a fixed default
+  which is an expected, not a failed, outcome. `resource.*` and
+  `fire.fps` don't support `auto` yet and fall back to a fixed default
   with a stderr note.
 - **Failed-trial rejection**: non-zero child exits and commands exceeding
   the 30-second per-trial safety limit are errors, never timing samples.
@@ -344,7 +343,6 @@ this table and the sections below are the summary. `show` (and
 | `cmd.overhead` | μs | yes | — | `{shell} -c true` wall-clock time — shell spawn + builtin dispatch |
 | `render.throughput` | MB/s, lines/s | no | `plain`, `ansi`, `cjk` | Producer-side completion rate for a fixed fixture written to the terminal |
 | `scroll.proxy` | ms | no | — | Proxy: wall-clock time until a large `cat` producer exits |
-| `input.latency` | ms | no | `idle`, `loaded` | PTY round trip: write a byte into a `cat` spawned on a fresh pty, time until it echoes back |
 | `resource.mem` | MB | no | `idle`, `load` | RSS of the terminal emulator's own GUI process |
 | `resource.cpu` | % | no | `idle`, `load` | %CPU of the terminal emulator's own GUI process |
 | `fire.fps` | fps | no | `<columns>x<rows>` | Producer-completed frames/second of the deterministic DOOM-fire stream at the recorded region |
@@ -361,13 +359,13 @@ wall-clock unreasonably long.
 
 **Shell-scoped vs. not**: `shell.startup`/`cmd.overhead` run once per entry
 in `--shells` and report `"shell"` accordingly. `render.throughput`,
-`scroll.proxy`, `input.latency`, and `fire.fps` measure the terminal
-emulator itself, not any particular shell, so they ignore `--shells`, run
+`scroll.proxy`, and `fire.fps` are written to the terminal
+emulator, not any particular shell, so they ignore `--shells`, run
 once, and report `"shell": null`.
 
 ### Comparing terminal emulators
 
-`render.throughput`/`scroll.proxy`/`input.latency` results are only
+`render.throughput`/`scroll.proxy`/`fire.fps` results are only
 meaningful in the context of the emulator they ran in. Each report's
 `meta.terminal` field (from `$TERM_PROGRAM`/`$TERM_PROGRAM_VERSION`, falling
 back to `$TERM`) identifies that emulator — to compare emulators, run
@@ -384,15 +382,15 @@ against `plain`/`ansi` — the same visual width costs more bytes. Use
 runs by roughly 2 for their double-width terminal columns) for a more
 apples-to-apples pace comparison across variants.
 
-### `input.latency` variants: idle / loaded
+### `input.latency` is retired
 
-`loaded` runs the same PTY round-trip measurement as `idle`, but with a
-`render.throughput`-style flood (the `plain` fixture) streaming to the
-terminal concurrently in the background, to see how much terminal I/O
-contention degrades echo latency and, especially, its **jitter (p95)**. If
-the flood cannot start, no `loaded` row is emitted; the run never relabels
-an idle measurement as loaded. Flood cleanup is handled by the integrated
-child-process helper in `src/measure.rs`.
+`run` no longer emits `input.latency`. It opened a fresh pty and timed the
+echo of one byte, and that echo comes from the kernel's line discipline: the
+same ~0.01 ms round trip appears with no `cat` and no terminal emulator
+attached. The number said nothing about the terminal it was reported under,
+and its `loaded` variant only reflected CPU contention from the flood. The
+profile stays registered in Reporting Spec v1 so older reports still
+validate and render.
 
 ### `fire.fps`: DOOM-fire IO stress
 
@@ -438,14 +436,10 @@ reporting the median, but that's a mitigation, not a fix — treat
   is literally the wall-clock time for a large `cat` producer to finish
   writing — it does not observe terminal settling and is not a true redraw-event
   measurement (proposal §3 item 3).
-- `input.latency` measures a **pseudo-terminal round trip** (write a byte
-  into a `cat` spawned on a fresh pty, time until it's read back), not real
-  keypress-to-screen-photon latency. True input latency needs GUI
-  automation, which is out of scope (proposal §6.6 extension 3). It also
-  requires opening a pty; if none is available (e.g. some sandboxed/CI
-  environments) the scenario is skipped with a stderr warning rather than
-  failing the whole run. A timeout or missing echo invalidates the variant;
-  the PTY line discipline itself may provide the observed echo.
+- `render.throughput`/`scroll.proxy`/`fire.fps` describe whatever reads the
+  controlling tty. Inside `tmux` or GNU `screen` that is the multiplexer,
+  not the emulator: `run` warns on stderr and records it in
+  `meta.meta_notes`. Other intermediaries (`script`, SSH) are not detected.
 - `render.throughput`/`scroll.proxy`/`fire.fps` need a controlling terminal
   (`/dev/tty`) to measure the registered PTY workload. Without one
   (non-interactive/CI contexts), those metrics are skipped; no `/dev/null`
@@ -472,7 +466,7 @@ dependency — warmup + outlier handling, hyperfine's main advantages over
 the old fallback, are now built in.
 
 Each result object includes a `"backend"` field (`"rust-timer"`,
-`"rust-pty"` for `input.latency`, `"ps"` for `resource.*`,
+`"ps"` for `resource.*`,
 `"fire-v2-overlapped"` for `fire.fps`) so reports are traceable to the
 backend that produced them. Reports from the earlier backends
 (`hyperfine`, `zsh-timer`, `zsh-zpty`) remain conformant under Reporting
@@ -499,7 +493,7 @@ from the section above.
   self-contained binary with no runtime dependencies
 - the shells being benchmarked (`zsh`/`bash`/... ) on `PATH`
 - a controlling terminal, for `render.throughput`/`scroll.proxy`/
-  `fire.fps`, and a usable pty, for `input.latency` — unavailable metrics
+  `fire.fps` — unavailable metrics
   are skipped with an actionable warning rather than replaced by a
   different workload
 
@@ -554,7 +548,7 @@ semantic conformance, claim safety, or pairwise comparability; use
   fish shell support; no `prompt.render` metric — deferred to later phases
   (proposal §6.6 extension 2/3).
 - `--runs auto` only converges for `shell.startup`/`cmd.overhead`/
-  `render.throughput`/`scroll.proxy`; `input.latency`/`resource.*`/
+  `render.throughput`/`scroll.proxy`; `resource.*`/
   `fire.fps` fall back to a fixed trial count with a stderr note.
 - The concurrent-run lock only detects other `tbench run` processes, not
   unrelated system load (a build, backups, etc.) — see caveat above.
@@ -571,8 +565,8 @@ semantic conformance, claim safety, or pairwise comparability; use
   that, `compare` falls back to the original median/p95/stddev-only,
   threshold-only behavior — fully backward compatible with reports from
   before this feature existed.
-- `scroll.proxy` and `input.latency` are approximations, not true
-  redraw-event / photon-latency measurements — see caveats above.
+- `scroll.proxy` is an approximation, not a true redraw-event
+  measurement — see caveats above.
 - `render.throughput`'s `cjk` variant's MB/s isn't directly comparable to
   `plain`/`ansi`'s (different bytes-per-character) — see caveat above.
 - `resource.mem`/`resource.cpu` only work when `tbench` runs inside a

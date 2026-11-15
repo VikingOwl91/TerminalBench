@@ -14,7 +14,7 @@ Common behavior:
   `min(--runs, 5)`).
 - "Direction": low = lower is better, high = higher is better. In the JSON,
   `measurement.direction` is the authoritative source.
-- Process-timed and PTY-echo trials get a warmup (default 3 discarded
+- Process-timed trials get a warmup (default 3 discarded
   runs) and 1.5×IQR outlier filtering. The removed count is recorded per
   result as `outliers_removed`. `resource.*` point samples and duration-
   based `fire.fps` trials do not use this filter.
@@ -31,7 +31,6 @@ Common behavior:
 | `cmd.overhead` | μs | low | yes | — | Shell process spawn + builtin dispatch cost |
 | `render.throughput` | MB/s, lines/s | high | no | `plain` / `ansi` / `cjk` | Producer-side PTY output throughput |
 | `scroll.proxy` | ms | low | no | — | Time until the large-output producer exits (proxy) |
-| `input.latency` | ms | low | no | `idle` / `loaded` | PTY echo round-trip latency |
 | `resource.mem` | MB | low | no | `idle` / `load` | RSS of the emulator's GUI process |
 | `resource.cpu` | % | low | no | `idle` / `load` | %CPU of the emulator's GUI process |
 | `fire.fps` | fps | high | no | `<columns>x<rows>` | Producer-completed frames/s for a DOOM-fire repaint stream |
@@ -112,27 +111,15 @@ means it measures the terminal emulator itself, runs once regardless of
   any redraw event. It also includes `cat` process creation and fixture file
   reads. Like `render.throughput`, it is skipped without a controlling terminal.
 
-## input.latency — input latency (PTY round trip)
+## input.latency — retired
 
-- **What it measures**: spawns `cat` on a fresh pseudo-terminal
-  (`openpty`), writes one byte to the master side, and times until the
-  echoed byte is read back. Backend: `"rust-pty"` (the retired zsh
-  implementation reported `"zsh-zpty"`).
-- **Variants**:
-  - `idle` — the round trip with nothing else running
-  - `loaded` — the same measurement while a `render.throughput`-style flood
-    (the `plain` fixture) streams to the terminal in the background, to see
-    how much output contention degrades latency and especially its
-    **jitter (p95)**.
-- **Unit / direction**: ms, lower is better.
-- **Caveats**: this is a pseudo-terminal echo round trip, **not real
-  keypress-to-screen-photon latency** (that needs GUI automation — out of
-  scope, proposal §6.6 extension 3). If no pty is available
-  (sandboxes/CI), the variant is skipped with a warning. A timeout or
-  missing echo invalidates the whole variant instead of being silently
-  dropped. The observed echo can be provided by the PTY line discipline,
-  so this does not isolate `cat` processing. Does not support `--runs auto`
-  (falls back to a fixed trial count).
+No longer emitted. The measurement wrote one byte to the master side of a
+fresh pseudo-terminal and timed the echo. That echo is produced by the
+kernel's PTY line discipline, so the result (about 0.01 ms on Linux) was the
+same with no `cat` child and no terminal emulator involved; the `loaded`
+variant only added CPU contention from the output flood. The
+`org.terminalbench.input.pty-round-trip` profile remains registered so
+existing reports stay conformant.
 
 ## resource.mem / resource.cpu — resource footprint
 

@@ -5,10 +5,7 @@
 
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::time::Instant;
 
 use crate::measure::{self, Runs, Sink};
 use crate::report::ResultRow;
@@ -35,7 +32,6 @@ pub fn run_scenario(scenario: &Scenario, cfg: &RunConfig, results: &mut Vec<Resu
         "shell" => run_shell(scenario, cfg, results),
         "render_throughput" => run_render_throughput(scenario, cfg, results),
         "scroll_proxy" => run_scroll_proxy(scenario, cfg, results),
-        "input_latency" => run_input_latency(scenario, cfg, results),
         "resource_footprint" => crate::resource::run(scenario, cfg, results),
         "fire" => run_fire(scenario, cfg, results),
         other => {
@@ -328,171 +324,6 @@ fn run_scroll_proxy(scenario: &Scenario, cfg: &RunConfig, results: &mut Vec<Resu
         samples: cfg.keep_samples.then(|| c.samples_ms.clone()),
     });
     true
-}
-
-// --- kind: input_latency -------------------------------------------------
-
-const BACKEND_PTY: &str = "rust-pty";
-
-/// One pty round trip: spawn `cat` on a fresh pty, write a byte to the
-/// master, time until it's echoed back. Mirrors the zpty measurement
-/// (fresh pty per trial); the reply wait is a poll(2) with a 1s budget so
-/// a stuck pty can't hang the run. Returns None if the pty layer itself
-/// failed (caller must skip the scenario).
-fn pty_round_trip_ms() -> Option<Option<f64>> {
-    let mut master_fd: libc::c_int = -1;
-    let mut slave_fd: libc::c_int = -1;
-    let rc = unsafe {
-        libc::openpty(
-            &mut master_fd,
-            &mut slave_fd,
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-            std::ptr::null_mut(),
-        )
-    };
-    if rc != 0 {
-        return None;
-    }
-    let master = unsafe { OwnedFd::from_raw_fd(master_fd) };
-    let slave = unsafe { OwnedFd::from_raw_fd(slave_fd) };
-
-    let slave_stdio = |fd: &OwnedFd| unsafe { Stdio::from_raw_fd(libc::dup(fd.as_raw_fd())) };
-    let child = Command::new("cat")
-        .stdin(slave_stdio(&slave))
-        .stdout(slave_stdio(&slave))
-        .stderr(Stdio::null())
-        .spawn();
-    drop(slave);
-    let Ok(mut child) = child else { return None };
-
-    let start = Instant::now();
-    let wrote = unsafe { libc::write(master.as_raw_fd(), b"x".as_ptr().cast(), 1) } == 1;
-    let mut sample = None;
-    if wrote {
-        let mut pfd = libc::pollfd {
-            fd: master.as_raw_fd(),
-            events: libc::POLLIN,
-            revents: 0,
-        };
-        let ready = unsafe { libc::poll(&mut pfd, 1, 1000) };
-        if ready == 1 {
-            let mut buf = [0u8; 64];
-            let n = unsafe { libc::read(master.as_raw_fd(), buf.as_mut_ptr().cast(), buf.len()) };
-            if n > 0 {
-                sample = Some(start.elapsed().as_secs_f64() * 1000.0);
-            }
-        }
-    }
-    let _ = child.kill();
-    let _ = child.wait();
-    Some(sample)
-}
-
-fn run_input_latency(scenario: &Scenario, cfg: &RunConfig, results: &mut Vec<ResultRow>) -> bool {
-    let metric = scenario
-        .field("metric")
-        .unwrap_or("input.latency")
-        .to_string();
-    let unit = scenario.field("unit").unwrap_or("ms").to_string();
-    let notes_base = scenario.field("notes").map(str::to_string);
-
-    let runs = match cfg.runs {
-        Runs::Fixed(n) => n,
-        Runs::Auto => {
-            eprintln!("tbench: --runs auto is not supported for input.latency yet, using 20");
-            20
-        }
-    };
-
-    let mut produced = false;
-    for variant in ["idle", "loaded"] {
-        let mut flood = None;
-        if variant == "loaded" {
-            // Settle before the loaded variant so idle's pty teardown isn't
-            // still winding down when the flood starts.
-            settle(cfg);
-            let fixture = cfg.root.join("fixtures/large-output-plain.txt");
-            if !gen_fixtures(&cfg.root) {
-                eprintln!("tbench: input.latency/loaded requires a valid flood fixture, skipping");
-                continue;
-            }
-            match measure::flood_start(&fixture) {
-                Ok(f) => flood = Some(f),
-                Err(e) => {
-                    eprintln!(
-                        "tbench: input.latency/loaded could not start output flood: {e}; skipping"
-                    );
-                    continue;
-                }
-            }
-        }
-
-        let mut samples_ms = Vec::new();
-        let mut trial_failed = false;
-        for _ in 0..cfg.warmup {
-            if !matches!(pty_round_trip_ms(), Some(Some(_))) {
-                trial_failed = true;
-                break;
-            }
-        }
-        for _ in 0..runs {
-            if trial_failed {
-                break;
-            }
-            match pty_round_trip_ms() {
-                Some(Some(ms)) => samples_ms.push(ms),
-                None | Some(None) => {
-                    trial_failed = true;
-                    break;
-                }
-            }
-        }
-
-        if let Some(f) = flood {
-            if let Err(e) = f.stop() {
-                eprintln!(
-                    "tbench: input.latency/{variant} output flood failed during sampling: {e}; discarding the variant"
-                );
-                continue;
-            }
-        }
-
-        if trial_failed {
-            eprintln!(
-                "tbench: input.latency/{variant} had a PTY setup, write, or echo timeout failure; discarding the variant"
-            );
-            continue;
-        }
-        if samples_ms.is_empty() {
-            eprintln!("tbench: input.latency/{variant} produced no usable samples");
-            continue;
-        }
-
-        let (outliers_removed, samples_ms) = stats::iqr_filter(&samples_ms);
-        if samples_ms.is_empty() {
-            eprintln!("tbench: input.latency/{variant} had no samples after filtering");
-            continue;
-        }
-        let med = stats::median(&samples_ms);
-
-        results.push(ResultRow {
-            metric: metric.clone(),
-            shell: None,
-            unit: unit.clone(),
-            median: med,
-            p95: stats::p95(&samples_ms),
-            stddev: stats::stddev(&samples_ms),
-            runs: samples_ms.len(),
-            outliers_removed,
-            backend: BACKEND_PTY.to_string(),
-            variant: Some(variant.to_string()),
-            notes: notes_base.clone(),
-            samples: cfg.keep_samples.then(|| samples_ms.clone()),
-        });
-        produced = true;
-    }
-    produced
 }
 
 // --- kind: fire ----------------------------------------------------------

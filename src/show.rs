@@ -46,7 +46,7 @@ pub const METRIC_SUMMARIES: &[(&str, &str)] = &[
     ("cmd.overhead", "shell spawn + builtin dispatch cost (`shell -c true`), wall-clock"),
     ("render.throughput", "producer-side PTY completion rate for a fixed fixture (plain/ansi/cjk); display presentation is not observed"),
     ("scroll.proxy", "proxy: wall-clock until a large `cat` producer exits; scrollback settling is not observed"),
-    ("input.latency", "synthetic PTY echo round trip; loaded = under a verified output flood"),
+    ("input.latency", "retired: kernel PTY line-discipline echo on a fresh pty, which never involved the terminal emulator; shown for older reports only"),
     ("resource.mem", "RSS of the terminal emulator's own GUI process (idle / under flood load)"),
     ("resource.cpu", "%CPU of the emulator's own GUI process (macOS decayed average — directional only)"),
     ("fire.fps", "DOOM-fire producer-completed frames/second at the geometry recorded by variant"),

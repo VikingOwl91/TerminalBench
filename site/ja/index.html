@@ -311,11 +311,11 @@ bin/tbench compare results/report-a.json results/report-b.json</code></pre>
         <div class="faq-list">
           <details><summary>TerminalBenchは何を計測しますか？</summary><p>シェルプロセスの時間と、PTY出力、合成PTYエコー、プロセスリソースに対するターミナルエミュレーターのプロキシまたはサンプリング観測を記録します。v1の各指標には、手法、スコープ、観測境界、制約、対象外の主張が記載されます。</p></details>
           <details><summary>画面に表示される内容を計測しますか？</summary><p>いいえ。プロデューサー側のPTY完了では、ターミナル解析、最終フレーム提示、ピクセル、フレームスキップを観測しません。renderとscrollのプロファイルは画面上の主張を対象外とします。</p></details>
-          <details><summary>input.latencyは物理キー押下を計測しますか？</summary><p>いいえ。合成PTYエコーの往復を計測します。キーボード、GUIイベントルーティング、レンダリング、ディスプレイ提示、物理キー押下から表示までの遅延は対象外です。</p></details>
+          <details><summary>input.latencyは物理キー押下を計測しますか？</summary><p>いいえ。合成PTYエコーの往復を計測していましたが、このエコーはカーネルのPTY回線規約が返すものでターミナルエミュレーターを経由しないため、ランナーは現在この指標を出力しません。プロファイルは既存レポートのために登録されたままです。</p></details>
           <details><summary>どの2つのレポートでも比較できますか？</summary><p>いいえ。両方のレポートを検証してから、ペアごとの適格性ゲートを実行してください。COMPARABLEが返された後にだけ値を比較します。既知の不一致はNOT_COMPARABLE、決定的なコンテキストの不足はUNDETERMINEDを返します。</p></details>
           <details><summary>最速ターミナルのランキングですか？</summary><p>いいえ。このプロトコルは範囲を限定した観測を記録し、ペアごとの適格性を判定します。ランキングを運用したり、普遍的な勝者を認定したりはしません。</p></details>
           <details><summary>環境情報が不足している場合はどうなりますか？</summary><p>レポートは必須の事実を既知または不明として記録します。既知の不一致がすでにペアを拒否しておらず、決定的な事実が不明なままの場合、適格性はUNDETERMINEDです。プラットフォームから検出できない場合、CIから文書化された安定制御条件を提供できます。</p></details>
-          <details><summary>最初の実行には何が必要ですか？</summary><p>初回のみRustツールチェーン(cargo)で単一の自己完結バイナリをビルドします。以降のランタイム依存はありません。ターミナル向けシナリオには制御端末、input latencyには利用可能なPTYが必要です。</p></details>
+          <details><summary>最初の実行には何が必要ですか？</summary><p>初回のみRustツールチェーン(cargo)で単一の自己完結バイナリをビルドします。以降のランタイム依存はありません。ターミナル向けシナリオには制御端末が必要です。</p></details>
           <details><summary>Terminal-BenchというAIエージェント向けベンチマークですか？</summary><p>いいえ。このプロジェクトは、ターミナルエミュレーター性能のレポートと比較可能性のためのプロトコルです。</p></details>
         </div>
       </section>
