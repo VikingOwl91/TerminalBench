@@ -68,7 +68,20 @@ struct Profile {
     workload_prefix: &'static str, // variant appended when it contains "{variant}"
 }
 
-fn profile_for(metric: &str, unit: &str, variant: Option<&str>) -> Profile {
+fn profile_for(metric: &str, unit: &str, variant: Option<&str>, backend: &str) -> Profile {
+    if (metric, unit, backend) == ("resource.cpu", "pct", crate::resource::BACKEND_PROCFS) {
+        return Profile {
+            profile: "org.terminalbench.resource.cpu.window",
+            classification: "sampled",
+            method: "org.terminalbench.method.process-cpu-time-window",
+            scope: "terminal-process-cpu",
+            boundary: "identified-terminal-process-cpu-time-over-wall-clock-window",
+            direction: "lower-is-better",
+            limitation: "Covers one identified process over fixed wall-clock windows at kernel clock-tick resolution; helper processes are not included.",
+            excluded: "Whole-system CPU cost",
+            workload_prefix: "urn:tbench:workload:resource-window-{variant}:v1",
+        };
+    }
     match (metric, unit, variant) {
         ("shell.startup", "ms", _) => Profile {
             profile: "org.terminalbench.shell.startup",
@@ -195,7 +208,7 @@ fn profile_for(metric: &str, unit: &str, variant: Option<&str>) -> Profile {
 }
 
 fn measurement_json(row: &ResultRow) -> Value {
-    let p = profile_for(&row.metric, &row.unit, row.variant.as_deref());
+    let p = profile_for(&row.metric, &row.unit, row.variant.as_deref(), &row.backend);
     let workload_id = if p.workload_prefix.contains("{variant}") {
         p.workload_prefix
             .replace("{variant}", row.variant.as_deref().unwrap_or("unknown"))
@@ -365,20 +378,6 @@ pub fn detect_terminal() -> String {
     }
 }
 
-/// Terminal multiplexer the run is nested in, from the environment variables
-/// tmux and GNU screen export. Other pty intermediaries (script, ssh) are not
-/// detectable this way.
-pub fn multiplexer() -> Option<&'static str> {
-    let set = |name: &str| std::env::var_os(name).is_some_and(|v| !v.is_empty());
-    if set("TMUX") {
-        Some("tmux")
-    } else if set("STY") {
-        Some("screen")
-    } else {
-        None
-    }
-}
-
 /// Metrics whose workload is written to the controlling tty.
 pub fn is_tty_bound(metric: &str) -> bool {
     matches!(metric, "render.throughput" | "scroll.proxy" | "fire.fps")
@@ -489,7 +488,12 @@ fn fact_unknown(reason: &str) -> Value {
 /// probe verdict ("supported"/"unsupported"/"no_reply"). `app` is the
 /// already-validated `run --app` identifier; it wins over both detection
 /// and TBENCH_TERMINAL_ID.
-pub fn build_report(results: &[ResultRow], sync_output: &str, app: Option<&str>) -> Value {
+pub fn build_report(
+    results: &[ResultRow],
+    sync_output: &str,
+    app: Option<&str>,
+    extensions: Map<String, Value>,
+) -> Value {
     let os = canonical_os(&cmd_stdout("uname", &["-s"]).unwrap_or_default());
     let arch = canonical_arch(&cmd_stdout("uname", &["-m"]).unwrap_or_default());
     let measured_shells: BTreeSet<&str> = results
@@ -554,7 +558,7 @@ pub fn build_report(results: &[ResultRow], sync_output: &str, app: Option<&str>)
         }
     }
 
-    if let Some(mux) = multiplexer() {
+    if let Some(mux) = crate::resource::pty_intermediary() {
         if results.iter().any(|row| is_tty_bound(&row.metric)) {
             meta_notes.push(format!(
                 "run inside {mux}: render.throughput, scroll.proxy and fire.fps wrote to the {mux} pty and describe {mux}, not the terminal emulator"
@@ -678,7 +682,7 @@ pub fn build_report(results: &[ResultRow], sync_output: &str, app: Option<&str>)
         None => fact_unknown("display refresh rate was not available"),
     };
 
-    json!({
+    let mut doc = json!({
         "$schema": "urn:tbench:schema:report:v1",
         "wire_version": "1.0.0",
         "producer": {
@@ -701,7 +705,11 @@ pub fn build_report(results: &[ResultRow], sync_output: &str, app: Option<&str>)
         },
         "meta": Value::Object(meta),
         "results": results.iter().map(result_json).collect::<Vec<_>>(),
-    })
+    });
+    if !extensions.is_empty() {
+        doc["extensions"] = Value::Object(extensions);
+    }
+    doc
 }
 
 /// UTC "YYYY-MM-DDTHH:MM:SSZ" without a chrono dependency: civil-from-days
@@ -866,6 +874,18 @@ pub fn smoke_rows() -> Vec<ResultRow> {
             Some("idle"),
             Some("process sample"),
             &[4.0, 5.0, 7.0],
+        ),
+        row(
+            "resource.cpu",
+            "pct",
+            None,
+            "procfs",
+            40.0,
+            2.0,
+            43.0,
+            Some("load"),
+            Some("process sample"),
+            &[38.0, 40.0, 43.0],
         ),
         row(
             "fire.fps",

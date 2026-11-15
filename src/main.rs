@@ -9,6 +9,7 @@ mod fire;
 mod lock;
 mod measure;
 mod orchestrate;
+mod procfs;
 mod report;
 mod resource;
 mod runner;
@@ -49,7 +50,7 @@ Options (run):
                     scroll.proxy; other scenarios fall back to a fixed default)
   --settle N        Seconds to pause between scenarios/variants (default: 2);
                     resource.*'s idle sampling always waits at least 5s
-                    regardless, to let macOS's decayed %cpu average cool down
+                    regardless, so earlier load has died down
   --warmup N        Discarded warmup trials for process-timed metrics
                     (default: 3; not used by resource.* or fire.fps)
   --keep-samples    Attach each result's raw per-trial samples as a
@@ -169,8 +170,12 @@ fn main() -> ExitCode {
         Some("__smoke-report") => {
             // Hidden test hook: emit a synthetic report covering every
             // registered profile through the real assembly path.
-            let doc =
-                report::build_report(&report::smoke_rows(), fidelity::probe_sync_output(), None);
+            let doc = report::build_report(
+                &report::smoke_rows(),
+                fidelity::probe_sync_output(),
+                None,
+                Default::default(),
+            );
             println!(
                 "{}",
                 serde_json::to_string_pretty(&doc).expect("report serialization")
@@ -314,14 +319,19 @@ fn cmd_run(args: &[String]) -> ExitCode {
         warmup,
         settle_secs: settle,
         keep_samples,
+        extensions: Default::default(),
     };
 
-    if let Some(mux) = report::multiplexer() {
+    if let Some(mux) = resource::pty_intermediary() {
         eprintln!("tbench: running inside {mux}; render.throughput, scroll.proxy and fire.fps will measure {mux}, not the terminal emulator");
     }
 
     let mut results = Vec::new();
     let mut skipped: Vec<&str> = Vec::new();
+    // resource.*/idle is a baseline: sample it before any scenario has
+    // pushed output through the terminal's scrollback.
+    let mut scenarios = scenarios;
+    scenarios.sort_by_key(|sc| sc.kind() != "resource_footprint");
     for (i, sc) in scenarios.iter().enumerate() {
         // Settle between scenarios too, not just between variants within
         // one — the same cross-contamination risk applies at scenario
@@ -350,7 +360,7 @@ fn cmd_run(args: &[String]) -> ExitCode {
     }
 
     let sync_output = fidelity::probe_sync_output();
-    let doc = report::build_report(&results, sync_output, app.as_deref());
+    let doc = report::build_report(&results, sync_output, app.as_deref(), cfg.extensions.take());
     let json = serde_json::to_string_pretty(&doc).expect("report serialization");
 
     let output = output.unwrap_or_else(|| {
