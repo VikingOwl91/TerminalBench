@@ -351,14 +351,14 @@ this table and the sections below are the summary. `show` (and
 | `cmd.overhead` | μs | yes | — | `{shell} -c true` wall-clock time — dominated by process spawn and shell initialization; not a differential against a direct exec |
 | `render.throughput` | MB/s, lines/s | no | `plain`, `ansi`, `cjk` | Producer-side completion rate for a fixed fixture written to the terminal |
 | `scroll.proxy` | ms | no | — | Proxy: wall-clock time until a large `cat` producer exits |
-| `resource.mem` | MB | no | `idle`, `load` | RSS of the terminal emulator's own GUI process |
-| `resource.cpu` | % | no | `idle`, `load` | %CPU of the terminal emulator's own GUI process |
+| `resource.mem` | MB | no | `idle`, `load` | RSS of the terminal emulator's own process |
+| `resource.cpu` | % | no | `idle`, `load` | CPU use of the terminal emulator's own process (Linux: CPU time per 1 s window; macOS: `ps %cpu`) |
 | `fire.fps` | fps | no | `<columns>x<rows>` | Producer-completed frames/second of the deterministic DOOM-fire stream at the recorded region |
 
 Each metric runs N trials (default 20, `--runs`) and reports median, stddev,
-and p95. `resource.mem`/`resource.cpu` instead take up to 5 point-in-time
-`ps` samples per variant (fewer if `--runs` < 5, since sampling a live
-process 20 times isn't meaningfully different from 5). `fire.fps` is
+and p95. `resource.mem`/`resource.cpu` instead take up to 5 samples per
+variant (fewer if `--runs` < 5): one-second windows on Linux, point-in-time
+`ps` samples on macOS. `fire.fps` is
 duration-based rather than iteration-based: each trial runs `FIRE_SECS`
 wall-clock seconds (env var, default 5; finite range 0.1–60), and the trial count used is
 `min(--runs, 5)` for the same reason `resource.*` caps its sample count —
@@ -424,19 +424,43 @@ producer design are identical to the C tool, so fps from the two is
 directly comparable; the retired serial (v1) producer's numbers are not —
 check `backend` before comparing `fire.fps` values across reports.
 
-### `resource.mem` / `resource.cpu`: which process, and macOS `%cpu` caveat
+### `resource.mem` / `resource.cpu`: which process, and how it is sampled
 
-These target the **terminal emulator's own GUI process**, not the shell or
-`tbench` itself. It's found by walking the process ancestry from `tbench`
-upward to the first executable living inside a macOS `.app` bundle
-(`.../Contents/MacOS/<bin>`). If none is found — inside `tmux`, over SSH, or
-on non-macOS — the scenario is **skipped with a stderr warning** rather
-than misattributing resource usage to the wrong process.
+These target the **terminal emulator's own process**, not the shell or
+`tbench` itself. The scenario runs first in a full `run`, so `idle` is
+sampled before any other scenario has pushed output through the terminal.
 
-macOS's `ps -o %cpu` is a **decayed running average**, not an instantaneous
-sample. `tbench` mitigates this by taking several samples per variant and
-reporting the median, but that's a mitigation, not a fix — treat
-`resource.cpu` as directional, not a precise instant-CPU reading.
+**Linux** (backend `procfs`): the target is the process holding the master
+side of `tbench`'s controlling pty, found through `/proc/<pid>/fdinfo`.
+Each variant takes up to 5 one-second windows (fewer if `--runs` < 5); the
+`load` variant starts sampling 1 s after the flood begins.
+
+- `resource.mem` is RSS at the end of each window (`/proc/<pid>/statm`,
+  the figure `ps -o rss` shows).
+- `resource.cpu` is user plus system CPU time accumulated during the
+  window as a percentage of one core, at kernel clock-tick resolution
+  (1 percentage point per window at 100 ticks/s). This is reported under
+  its own profile, `org.terminalbench.resource.cpu.window`, because it is
+  a different method from the `ps` figure.
+- The report's `extensions["org.terminalbench.resource"]` records the pid,
+  executable, thread count, how many pty masters the process holds (more
+  than one means it also serves other windows, tabs or panes), PSS per
+  variant, and when each variant's sampling started. Extensions never affect comparability.
+
+If the pty belongs to tmux, screen, `script`, sshd, mosh, zellij, dtach or
+abduco, or no readable process holds it, the scenario is **skipped with a
+stderr warning**. Helper processes of multi-process emulators are not
+included.
+
+**macOS** (backend `ps`): the target is found by walking the process
+ancestry from `tbench` upward to the first executable living inside a
+`.app` bundle (`.../Contents/MacOS/<bin>`); inside `tmux` or over SSH none
+is found and the scenario is skipped. Up to 5 `ps` samples are taken 200 ms
+apart. macOS's `ps -o %cpu` is a **decayed running average**, not an
+instantaneous sample; taking the median of several samples is a
+mitigation, not a fix, so treat `resource.cpu` there as directional.
+
+Other systems are skipped.
 
 ### Proxy/approximate metrics — read before trusting the numbers
 
@@ -447,7 +471,8 @@ reporting the median, but that's a mitigation, not a fix — treat
 - `render.throughput`/`scroll.proxy`/`fire.fps` describe whatever reads the
   controlling tty. Inside `tmux` or GNU `screen` that is the multiplexer,
   not the emulator: `run` warns on stderr and records it in
-  `meta.meta_notes`. Other intermediaries (`script`, SSH) are not detected.
+  `meta.meta_notes`. On Linux the same happens when the pty master is held
+  by `script`, sshd, mosh, zellij, dtach or abduco.
 - `render.throughput`/`scroll.proxy`/`fire.fps` need a controlling terminal
   (`/dev/tty`) to measure the registered PTY workload. Without one
   (non-interactive/CI contexts), those metrics are skipped; no `/dev/null`
@@ -458,8 +483,8 @@ reporting the median, but that's a mitigation, not a fix — treat
 - `fire.fps` reports frames/second, but — like `render.throughput` — it is
   a producer-side PTY-write-completion proxy, not a confirmed on-screen
   frame rate; see the caveat above.
-- `resource.mem`/`resource.cpu` are unavailable outside a directly-launched
-  macOS terminal emulator (see caveat above).
+- `resource.mem`/`resource.cpu` need a directly-launched terminal emulator
+  on Linux or macOS (see above).
 
 Every result carries these caveats inline via an optional `"notes"` field
 in the JSON (see schema below) so they travel with the data.
@@ -474,7 +499,7 @@ dependency — warmup + outlier handling, hyperfine's main advantages over
 the old fallback, are now built in.
 
 Each result object includes a `"backend"` field (`"rust-timer"`,
-`"ps"` for `resource.*`,
+`"ps"` or `"procfs"` for `resource.*`,
 `"fire-v2-overlapped"` for `fire.fps`) so reports are traceable to the
 backend that produced them. Reports from the earlier backends
 (`hyperfine`, `zsh-timer`, `zsh-zpty`) remain conformant under Reporting
@@ -526,6 +551,7 @@ src/scenario.rs      # scenarios/*.yaml loading (flat key: value reader)
 src/runner.rs        # scenario kind dispatch, fixtures, pty latency
 src/lock.rs          # results/.tbench.lock concurrent-run detection
 src/resource.rs      # terminal-PID discovery, resource.mem/resource.cpu
+src/procfs.rs        # Linux /proc readers (pty-master owner, RSS, PSS, CPU time)
 src/fidelity.rs      # DECSET 2026 synchronized-output probe
 src/fire.rs          # integrated DOOM-fire workload (port of the retired C tool)
 src/report.rs        # Reporting Spec v1 JSON assembly + env metadata
@@ -578,8 +604,9 @@ semantic conformance, claim safety, or pairwise comparability; use
 - `render.throughput`'s `cjk` variant's MB/s isn't directly comparable to
   `plain`/`ansi`'s (different bytes-per-character) — see caveat above.
 - `resource.mem`/`resource.cpu` only work when `tbench` runs inside a
-  directly-launched macOS terminal emulator (not tmux/SSH/non-macOS), and
-  `resource.cpu` inherits macOS's decayed-average `%cpu` semantics.
+  directly-launched terminal emulator on Linux or macOS (not tmux/SSH).
+  The two platforms use different CPU methods and profiles, and on macOS
+  `resource.cpu` inherits the decayed-average `%cpu` semantics.
 - `fire.fps`'s `--runs` is duration-based (`FIRE_SECS`, finite range
   0.1–60 seconds per trial) and capped at 5 trials regardless of `--runs`, unlike the
   iteration-based scenarios.

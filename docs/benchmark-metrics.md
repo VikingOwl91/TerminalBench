@@ -9,7 +9,7 @@ Metrics table. The definitions live in `scenarios/*.yaml` and
 Common behavior:
 
 - Each metric runs N trials (default 20, `--runs`) and reports **median /
-  p95 / stddev**. Exceptions: `resource.*` (up to 5 point-in-time samples
+  p95 / stddev**. Exceptions: `resource.*` (up to 5 samples
   per variant) and `fire.fps` (duration-based; trial count is
   `min(--runs, 5)`).
 - "Direction": low = lower is better, high = higher is better. In the JSON,
@@ -31,8 +31,8 @@ Common behavior:
 | `cmd.overhead` | μs | low | yes | — | Wall-clock of `{shell} -c true` (spawn + init + builtin) |
 | `render.throughput` | MB/s, lines/s | high | no | `plain` / `ansi` / `cjk` | Producer-side PTY output throughput |
 | `scroll.proxy` | ms | low | no | — | Time until the large-output producer exits (proxy) |
-| `resource.mem` | MB | low | no | `idle` / `load` | RSS of the emulator's GUI process |
-| `resource.cpu` | % | low | no | `idle` / `load` | %CPU of the emulator's GUI process |
+| `resource.mem` | MB | low | no | `idle` / `load` | RSS of the emulator's own process |
+| `resource.cpu` | % | low | no | `idle` / `load` | CPU use of the emulator's own process |
 | `fire.fps` | fps | high | no | `<columns>x<rows>` | Producer-completed frames/s for a DOOM-fire repaint stream |
 
 Shell-scoped = yes means the metric runs once per entry in `--shells`
@@ -125,24 +125,52 @@ existing reports stay conformant.
 
 ## resource.mem / resource.cpu — resource footprint
 
-- **What it measures**: RSS (MB) and %CPU of the **terminal emulator's own
-  GUI process** — not the shell, not tbench. The process is found by
-  walking the process ancestry from tbench upward to the first executable
-  inside a macOS `.app` bundle (`.../Contents/MacOS/<bin>`).
+- **What it measures**: memory (MB) and CPU use (%) of the **terminal
+  emulator's own process** — not the shell, not tbench.
+- **Which process**:
+  - Linux: the process holding the master side of tbench's controlling
+    pty, found by scanning `/proc/<pid>/fd` for `ptmx` descriptors whose
+    `fdinfo` `tty-index` matches. This identifies the emulator directly,
+    without guessing from the process ancestry.
+  - macOS: the first ancestor of tbench whose executable lives inside a
+    `.app` bundle (`.../Contents/MacOS/<bin>`).
 - **Variants**:
-  - `idle` — at rest. macOS's `ps %cpu` is a decayed running average, so
-    idle sampling waits **at least 5s** regardless of `--settle` to avoid
-    inheriting the previous scenario's load.
+  - `idle` — at rest. The scenario runs first in a full `run` and waits
+    **at least 5s** regardless of `--settle`.
   - `load` — sampled while a `render.throughput`-style flood is running.
-    If that flood cannot start, the load rows are skipped rather than
-    reported as unloaded samples.
-- **How**: up to 5 point-in-time `ps` samples per variant (fewer if
-  `--runs` < 5); the median is reported.
+    If that flood cannot start, or exits early, the load rows are dropped
+    rather than reported as unloaded samples.
+- **How, Linux** (backend `procfs`): up to 5 one-second windows per variant
+  (fewer if `--runs` < 5); `load` starts sampling 1 s after the flood.
+  `resource.mem` is RSS from `/proc/<pid>/statm` at the end of each window.
+  `resource.cpu` is `utime + stime` from `/proc/<pid>/stat` accumulated over
+  the window, divided by the wall-clock length of the window, as a
+  percentage of one core (so it can exceed 100 for a multi-threaded
+  emulator). Resolution is one clock tick per window, normally 1
+  percentage point. It carries the profile
+  `org.terminalbench.resource.cpu.window`.
+- **How, macOS** (backend `ps`): up to 5 point-in-time `ps` samples per
+  variant, 200 ms apart; the median is reported.
+- **Extra data (Linux)**: `extensions["org.terminalbench.resource"]` holds
+  the pid, `comm`, executable path, thread count, the number of pty masters
+  the process holds, PSS per variant, and the UTC time each variant's
+  sampling started. PSS divides shared pages among
+  the processes mapping them and is often far below RSS for GUI programs.
 - **Unit / direction**: MB / %, both lower is better.
-- **Caveats**: inside tmux, over SSH, or on non-macOS the target process
-  can't be identified and the scenario is skipped with a warning. Because
-  of macOS's decayed-average `%cpu` semantics, treat `resource.cpu` as
-  **directional**, not an instantaneous reading.
+- **Caveats**:
+  - Skipped with a warning when the pty belongs to tmux, screen, `script`,
+    sshd, mosh, zellij, dtach or abduco, when no readable process holds it,
+    and on systems other than Linux and macOS.
+  - A single-instance emulator serves every window from one process, so
+    its figures include the other windows. `pty_masters_held` above 1 shows
+    that.
+  - Helper processes (GPU, renderer, multiplexer daemons) are not included,
+    and GPU memory is not part of RSS or PSS.
+  - Linux and macOS use different CPU methods; the pairwise gate treats the
+    two profiles as NOT_COMPARABLE.
+  - On macOS, `ps %cpu` is a decayed running average: treat `resource.cpu`
+    there as **directional**, not an instantaneous reading.
+  - With at most 5 samples, the reported p95 is the maximum.
 
 ## fire.fps — DOOM-fire render stress
 
