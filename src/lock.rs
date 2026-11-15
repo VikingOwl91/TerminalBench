@@ -81,3 +81,47 @@ impl Drop for Lock {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_lock(tag: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "tbench-lock-{}-{tag}/.tbench.lock",
+            std::process::id()
+        ))
+    }
+
+    #[test]
+    fn lock_records_our_pid_and_is_removed_on_drop() {
+        let path = temp_lock("own");
+        let lock = acquire(&path, false).unwrap();
+        assert_eq!(read_lock_pid(&path), Some(std::process::id() as i32));
+        drop(lock);
+        assert!(!path.exists());
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn a_lock_left_by_a_dead_process_is_reclaimed() {
+        let path = temp_lock("stale");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        // i32::MAX is above any pid the kernel hands out.
+        std::fs::write(&path, format!("{}\n2026-01-01T00:00:00Z\n", i32::MAX)).unwrap();
+        let lock = acquire(&path, false).unwrap();
+        assert_eq!(read_lock_pid(&path), Some(std::process::id() as i32));
+        drop(lock);
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    #[test]
+    fn dropping_does_not_remove_a_lock_another_process_took_over() {
+        let path = temp_lock("foreign");
+        let lock = acquire(&path, false).unwrap();
+        std::fs::write(&path, "1\n").unwrap(); // pid 1 now "owns" it
+        drop(lock);
+        assert!(path.exists());
+        let _ = std::fs::remove_dir_all(path.parent().unwrap());
+    }
+}
