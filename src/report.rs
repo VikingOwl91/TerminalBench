@@ -384,7 +384,7 @@ pub fn is_tty_bound(metric: &str) -> bool {
 }
 
 #[derive(Default)]
-struct MacosMeta {
+struct HostMeta {
     power_source: Option<String>,
     low_power_mode: Option<bool>,
     machine_model: Option<String>,
@@ -398,11 +398,42 @@ struct MacosMeta {
 /// optional, failure is omission, and the one slow call
 /// (`system_profiler SPDisplaysDataType`) is timed — gpu/refresh are
 /// dropped with a meta note if it exceeded its 1s budget.
-fn collect_macos_meta() -> MacosMeta {
-    let mut meta = MacosMeta::default();
+/// Test hook: report assembly with every discovered host fact absent, on
+/// any OS (the variable predates Linux discovery, hence its name).
+fn host_discovery_disabled() -> bool {
+    std::env::var("TBENCH_TEST_DISABLE_MACOS_META").is_ok_and(|v| v == "1")
+}
 
-    // Test hook: report assembly with every optional field absent.
-    if std::env::var("TBENCH_TEST_DISABLE_MACOS_META").is_ok_and(|v| v == "1") {
+/// Linux host facts plus the `org.terminalbench.host` extension recording
+/// what each derived fact rests on.
+fn collect_linux_meta() -> (HostMeta, Option<Value>) {
+    if host_discovery_disabled() {
+        return (HostMeta::default(), None);
+    }
+    let host =
+        crate::linuxhost::collect(std::path::Path::new("/sys"), std::path::Path::new("/proc"));
+    let extension = json!({
+        "kernel": cmd_stdout("uname", &["-r"]),
+        "session_type": std::env::var("XDG_SESSION_TYPE").ok().filter(|v| !v.is_empty()),
+        "cpu_governor": host.cpu_governor,
+        "platform_profile": host.platform_profile,
+        "power_source_basis": host.power_basis,
+        "low_power_mode_basis": host.low_power_basis,
+    });
+    let meta = HostMeta {
+        power_source: host.power_source.map(str::to_string),
+        low_power_mode: host.low_power_mode,
+        machine_model: host.machine_model,
+        cpu: host.cpu,
+        ..HostMeta::default()
+    };
+    (meta, Some(extension))
+}
+
+fn collect_macos_meta() -> HostMeta {
+    let mut meta = HostMeta::default();
+
+    if host_discovery_disabled() {
         return meta;
     }
 
@@ -558,6 +589,20 @@ pub fn build_report(
         }
     }
 
+    // TERM_PROGRAM is unset in many Linux emulators. The process holding
+    // our pty master is direct evidence of which emulator this is.
+    let mut terminal_discovered = false;
+    if !terminal_override
+        && !terminal_override_invalid
+        && !std::env::var("TERM_PROGRAM").is_ok_and(|v| !v.is_empty())
+        && !host_discovery_disabled()
+    {
+        if let Some(name) = crate::resource::terminal_from_pty() {
+            terminal = name;
+            terminal_discovered = true;
+        }
+    }
+
     if let Some(mux) = crate::resource::pty_intermediary() {
         if results.iter().any(|row| is_tty_bound(&row.metric)) {
             meta_notes.push(format!(
@@ -566,10 +611,17 @@ pub fn build_report(
         }
     }
 
-    let mut mac = if os == "darwin" {
-        collect_macos_meta()
-    } else {
-        MacosMeta::default()
+    let mut extensions = extensions;
+    let mut mac = match os.as_str() {
+        "darwin" => collect_macos_meta(),
+        "linux" => {
+            let (meta, host_extension) = collect_linux_meta();
+            if let Some(ext) = host_extension {
+                extensions.insert("org.terminalbench.host".to_string(), ext);
+            }
+            meta
+        }
+        _ => HostMeta::default(),
     };
     if let Some(ms) = mac.system_profiler_over_budget_ms {
         meta_notes.push(format!(
@@ -658,6 +710,7 @@ pub fn build_report(
 
     // run_context.environment fact objects
     let terminal_fact = if terminal_override
+        || terminal_discovered
         || (!terminal_override_invalid
             && std::env::var("TERM_PROGRAM").is_ok_and(|v| !v.is_empty()))
     {

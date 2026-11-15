@@ -7,6 +7,7 @@ mod aa;
 mod compare;
 mod fidelity;
 mod fire;
+mod linuxhost;
 mod lock;
 mod measure;
 mod orchestrate;

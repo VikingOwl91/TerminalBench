@@ -88,6 +88,34 @@ pub fn pty_intermediary() -> Option<String> {
         .map(str::to_string)
 }
 
+/// Name of the terminal emulator holding our pty master (Linux only):
+/// the basename of its executable, or its `comm`. None when there is no
+/// controlling pty, the owner is not readable, or it is an intermediary.
+pub fn terminal_from_pty() -> Option<String> {
+    if !cfg!(target_os = "linux") {
+        return None;
+    }
+    let root = Path::new(PROC_ROOT);
+    let index = procfs::controlling_pts(root)?;
+    let owners = procfs::pty_master_owners(root, index);
+    if owners
+        .iter()
+        .any(|o| procfs::intermediary_name(&o.comm).is_some())
+    {
+        return None;
+    }
+    let owner = owners.first()?;
+    let from_exe = owner.exe.as_deref().and_then(|exe| {
+        let exe = exe.strip_suffix(" (deleted)").unwrap_or(exe);
+        Path::new(exe)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+    });
+    from_exe
+        .or_else(|| Some(owner.comm.clone()))
+        .filter(|name| !name.trim().is_empty())
+}
+
 fn sysconf(name: libc::c_int) -> Option<u64> {
     let v = unsafe { libc::sysconf(name) };
     (v > 0).then_some(v as u64)

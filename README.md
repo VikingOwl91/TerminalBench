@@ -66,8 +66,10 @@ bin/tbench compare results/a.json results/b.json
 
 The JSON Schema is a structural subset: passing it is necessary but is not
 sufficient for `CONFORMANT`, claim-safe, or `COMPARABLE`. The semantic rules
-and corpus in the specification remain authoritative. On CI and non-macOS
-hosts, controls that discovery cannot provide can be supplied explicitly:
+and corpus in the specification remain authoritative. Controls that
+discovery cannot provide can be supplied explicitly. On Linux that is
+normally only `TBENCH_DISPLAY_REFRESH_HZ`, which the gate needs for
+`render.throughput`, `scroll.proxy` and `fire.fps`; on CI it is all of them:
 
 ```sh
 TBENCH_TERMINAL_ID='ci-terminal 1.0' \
@@ -124,7 +126,29 @@ Real usage surfaced four ways the numbers themselves could be polluted;
   with a stderr note.
 - **Failed-trial rejection**: non-zero child exits and commands exceeding
   the 30-second per-trial safety limit are errors, never timing samples.
-- **Environment metadata** (macOS only, best-effort — omitted, not fatal,
+- **Environment metadata on Linux** (best-effort — a fact with no sound
+  basis stays unknown):
+  - `machine_model`: DMI system vendor and product name, or the board
+    vendor and name when those are firmware placeholders, or the
+    device-tree model; followed by the CPU model, because a board alone
+    does not fix the CPU.
+  - `cpu`: the model name from `/proc/cpuinfo`.
+  - `power_source`: `ac` when a mains or USB supply is online, `battery`
+    when the system battery is discharging, `ac` when there is no system
+    battery at all. Peripheral batteries are ignored.
+  - `low_power_mode`: true when the ACPI platform profile is `low-power`,
+    false for any other profile, and false when the machine has neither a
+    profile switch nor a battery. Unknown for a battery machine without a
+    profile switch.
+  - `terminal`: when `TERM_PROGRAM` is unset, the executable name of the
+    process holding the pty master (for example `kitty`), unless that is
+    tmux, screen or another intermediary.
+  - Display refresh rate is not discovered on Linux; set
+    `TBENCH_DISPLAY_REFRESH_HZ`.
+  - `extensions["org.terminalbench.host"]` records the kernel release,
+    session type, CPU governor, platform profile, and the basis of the
+    power and low-power facts.
+- **Environment metadata on macOS** (best-effort — omitted, not fatal,
   on failure): `meta.power_source` (`pmset -g batt`), `meta.low_power_mode`,
   `meta.machine_model`/`meta.cpu` (`sysctl`), and `meta.gpu`/
   `meta.display_refresh_hz` (`system_profiler SPDisplaysDataType`, timed —
@@ -597,6 +621,7 @@ src/procfs.rs        # Linux /proc readers (pty-master owner, RSS, PSS, CPU time
 src/fidelity.rs      # DECSET 2026 synchronized-output probe
 src/fire.rs          # integrated DOOM-fire workload (port of the retired C tool)
 src/report.rs        # Reporting Spec v1 JSON assembly + env metadata
+src/linuxhost.rs     # Linux host facts (machine model, CPU, power, low-power mode)
 src/show.rs / compare.rs / trend.rs   # report views (recap, tables/HTML, history)
 src/aa.rs            # A/A self-check of the regression gate
 src/orchestrate.rs   # per-app launch adapters (macOS)
