@@ -601,22 +601,22 @@ fn pointer_token(value: &str) -> String {
 // Profile registry
 // ---------------------------------------------------------------------------
 
-struct Profile {
-    metric: &'static str,
-    unit: &'static str,
-    profile_id: &'static str,
-    classification: &'static str,
-    method_id: &'static str,
-    method_version: &'static str,
-    scope: &'static str,
-    observed_boundary: &'static str,
-    direction: &'static str,
-    limitation: &'static str,
-    excluded: &'static str,
-    backends: &'static [&'static str],
-    variants: &'static [Option<&'static str>],
-    shell_required: bool,
-    workload: &'static str,
+pub(crate) struct Profile {
+    pub(crate) metric: &'static str,
+    pub(crate) unit: &'static str,
+    pub(crate) profile_id: &'static str,
+    pub(crate) classification: &'static str,
+    pub(crate) method_id: &'static str,
+    pub(crate) method_version: &'static str,
+    pub(crate) scope: &'static str,
+    pub(crate) observed_boundary: &'static str,
+    pub(crate) direction: &'static str,
+    pub(crate) limitation: &'static str,
+    pub(crate) excluded: &'static str,
+    pub(crate) backends: &'static [&'static str],
+    pub(crate) variants: &'static [Option<&'static str>],
+    pub(crate) shell_required: bool,
+    pub(crate) workload: &'static str,
 }
 
 impl Profile {
@@ -638,6 +638,9 @@ impl Profile {
     }
 }
 
+/// Every registered profile. This is the only copy in code: the emitter
+/// looks rows up here, and the tests below check that the specification
+/// and the JSON Schema carry the same strings.
 const PROFILES: &[Profile] = &[
     Profile {
         metric: "shell.startup",
@@ -839,6 +842,26 @@ fn find_profile(
         .find(|p| p.metric == m && p.unit == u && p.profile_id == id)
 }
 
+/// The profile a result row belongs to: same metric and unit, a registered
+/// backend, and a variant the profile defines.
+pub(crate) fn profile_for_row(
+    metric: &str,
+    unit: &str,
+    variant: Option<&str>,
+    backend: &str,
+) -> Option<&'static Profile> {
+    PROFILES.iter().find(|p| {
+        p.metric == metric
+            && p.unit == unit
+            && p.backends.contains(&backend)
+            && if p.profile_id == "org.terminalbench.fire.fps.geometry" {
+                variant.is_some_and(is_fire_geometry_variant)
+            } else {
+                p.variants.contains(&variant)
+            }
+    })
+}
+
 fn is_fire_geometry_variant(value: &str) -> bool {
     let Some((width, rows)) = value.split_once('x') else {
         return false;
@@ -864,7 +887,7 @@ fn all_profile_ids() -> Vec<&'static str> {
     ids.into_iter().collect()
 }
 
-fn canonical_proxy_note(metric: &str, profile_id: Option<&str>) -> Option<&'static str> {
+pub(crate) fn canonical_proxy_note(metric: &str, profile_id: Option<&str>) -> Option<&'static str> {
     match (metric, profile_id) {
         ("render.throughput", _) => Some("Proxy only: measures producer-side PTY write completion; it does not observe terminal parsing, final-frame presentation, frame time, FPS, pixels presented, or complete rendering."),
         ("scroll.proxy", _) => Some("Proxy only: measures producer-side PTY write completion for the scroll workload; it does not observe scroll, redraw, display events, frame time, FPS, pixels presented, or complete rendering."),
@@ -2584,6 +2607,132 @@ mod tests {
             "", "80", "80X24", "0x24", "80x0", "1001x24", "80x501", "80x24x1", " 80x24",
         ] {
             assert!(!is_fire_geometry_variant(invalid), "{invalid}");
+        }
+    }
+
+    #[test]
+    fn rows_resolve_to_one_registered_profile() {
+        let id = |m, u, v, b| profile_for_row(m, u, v, b).map(|p| p.profile_id);
+        assert_eq!(
+            id("resource.cpu", "pct", Some("idle"), "ps"),
+            Some("org.terminalbench.resource.cpu")
+        );
+        assert_eq!(
+            id("resource.cpu", "pct", Some("idle"), "procfs"),
+            Some("org.terminalbench.resource.cpu.window")
+        );
+        assert_eq!(
+            id("fire.fps", "fps", Some("80x24"), "fire-v2-overlapped"),
+            Some("org.terminalbench.fire.fps.geometry")
+        );
+        assert_eq!(
+            id("fire.fps", "fps", None, "fire-v2-overlapped"),
+            Some("org.terminalbench.fire.fps")
+        );
+        assert_eq!(
+            id("render.throughput", "MBps", Some("plain"), "rust-writer"),
+            Some("org.terminalbench.render.throughput.bytes")
+        );
+        assert_eq!(id("render.throughput", "MBps", Some("plain"), "cat"), None);
+        assert_eq!(
+            id("render.throughput", "MBps", Some("bold"), "rust-writer"),
+            None
+        );
+        assert_eq!(id("made.up", "ms", None, "rust-timer"), None);
+    }
+
+    /// The specification is the normative text and the schema is what
+    /// third parties validate against. Both restate the registry, so both
+    /// are checked against it here.
+    #[test]
+    fn specification_restates_every_profile_exactly() {
+        let spec = include_str!("../docs/reporting-spec-v1.md");
+        for p in PROFILES {
+            for needle in [
+                p.profile_id,
+                p.method_id,
+                p.scope,
+                p.observed_boundary,
+                p.limitation,
+                p.excluded,
+                p.workload,
+            ] {
+                assert!(
+                    spec.contains(needle),
+                    "spec lacks {needle:?} ({})",
+                    p.profile_id
+                );
+            }
+            let row = spec
+                .lines()
+                .find(|l| l.starts_with("| `") && l.contains(&format!("`{}` |", p.profile_id)))
+                .unwrap_or_else(|| panic!("no registry row for {}", p.profile_id));
+            for backend in p.backends {
+                assert!(
+                    row.contains(&format!("`{backend}`")),
+                    "{}: backend {backend}",
+                    p.profile_id
+                );
+            }
+            assert!(
+                row.starts_with(&format!("| `{}` / `{}` |", p.metric, p.unit)),
+                "{row}"
+            );
+        }
+        for metric in [
+            "render.throughput",
+            "scroll.proxy",
+            "input.latency",
+            "fire.fps",
+        ] {
+            for p in PROFILES.iter().filter(|p| p.metric == metric) {
+                let note = canonical_proxy_note(metric, Some(p.profile_id)).unwrap();
+                assert!(
+                    spec.contains(note),
+                    "spec lacks the note for {}",
+                    p.profile_id
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn schema_enumerates_the_registry_metrics_units_and_notes() {
+        let schema: serde_json::Value =
+            serde_json::from_str(include_str!("../schemas/tbench-report-v1.schema.json")).unwrap();
+        let result = &schema["$defs"]["result"];
+        let strings = |v: &serde_json::Value| -> BTreeSet<String> {
+            v.as_array()
+                .unwrap()
+                .iter()
+                .map(|x| x.as_str().unwrap().to_string())
+                .collect()
+        };
+        let metrics: BTreeSet<String> = PROFILES.iter().map(|p| p.metric.to_string()).collect();
+        let units: BTreeSet<String> = PROFILES.iter().map(|p| p.unit.to_string()).collect();
+        assert_eq!(strings(&result["properties"]["metric"]["enum"]), metrics);
+        assert_eq!(strings(&result["properties"]["unit"]["enum"]), units);
+        assert_eq!(
+            strings(&schema["$defs"]["measurement"]["properties"]["unit"]["enum"]),
+            units
+        );
+
+        for rule in result["allOf"].as_array().unwrap() {
+            let metric = rule["if"]["properties"]["metric"]["const"]
+                .as_str()
+                .unwrap();
+            let notes = &rule["then"]["properties"]["notes"];
+            let allowed: BTreeSet<String> = match notes.get("const") {
+                Some(one) => [one.as_str().unwrap().to_string()].into(),
+                None => strings(&notes["enum"]),
+            };
+            let registered: BTreeSet<String> = PROFILES
+                .iter()
+                .filter(|p| p.metric == metric)
+                .filter_map(|p| canonical_proxy_note(metric, Some(p.profile_id)))
+                .map(str::to_string)
+                .collect();
+            assert_eq!(allowed, registered, "{metric}");
         }
     }
 
