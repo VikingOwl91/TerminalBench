@@ -1,8 +1,9 @@
 name: Deploy GitHub Pages
 
+# Push-triggered deploys are off on this fork: the site's canonical, Open
+# Graph and sitemap URLs point at the upstream origin (see site/README.md).
+# Repoint those before re-enabling `push`.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 permissions: {}
