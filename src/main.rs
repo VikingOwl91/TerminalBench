@@ -4,6 +4,7 @@
 //! docs/reporting-spec-v1.md remains the wire contract.
 
 mod aa;
+mod cleanup;
 mod compare;
 mod fidelity;
 mod fire;
@@ -308,6 +309,7 @@ fn cmd_run(args: &[String]) -> ExitCode {
         return die_usage("tbench: --runs must be a positive integer or \"auto\"");
     };
 
+    cleanup::install();
     let lockfile = root.join("results/.tbench.lock");
     let _lock = match lock::acquire(&lockfile, force) {
         Ok(l) => l,

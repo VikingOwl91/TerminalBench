@@ -182,6 +182,7 @@ pub fn run(secs: f64, out: &mut File, full: bool) -> std::io::Result<FireOutcome
     let mut fire = Fire::new(w, rows);
 
     // alt screen + hidden cursor + clear; restored on exit
+    crate::cleanup::set_alt_screen(true);
     out.write_all(b"\x1b[?1049h\x1b[?25l\x1b[2J")?;
 
     // Warmup stays serial (nothing is timed yet; bytes are identical).
@@ -244,7 +245,8 @@ pub fn run(secs: f64, out: &mut File, full: bool) -> std::io::Result<FireOutcome
     drop(frame_tx);
     let (frames, t_last_ns, error) = writer.join().unwrap_or((0, 0, true));
 
-    let _ = out.write_all(b"\x1b[0m\x1b[?25h\x1b[?1049l");
+    let _ = out.write_all(crate::cleanup::RESTORE_SCREEN);
+    crate::cleanup::set_alt_screen(false);
 
     if error {
         return Err(std::io::Error::other("fire: write failed"));

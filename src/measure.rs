@@ -308,6 +308,7 @@ pub fn flood_start() -> std::io::Result<Flood> {
             "output flood exited before sampling: {status}"
         )));
     }
+    crate::cleanup::set_child(child.id());
     Ok(Flood { child })
 }
 
@@ -316,6 +317,7 @@ impl Flood {
     /// exited on its own, the caller must discard the loaded variant because
     /// the offered load was not present for the full measurement window.
     pub fn stop(mut self) -> std::io::Result<()> {
+        crate::cleanup::clear_child();
         if let Some(status) = self.child.try_wait()? {
             return Err(Error::other(format!(
                 "output flood exited during sampling: {status}"
@@ -330,6 +332,15 @@ impl Flood {
 /// `tbench __flood` — internal: loop-write the plain fixture to the tty
 /// until killed. Exits unsuccessfully if setup or output fails.
 pub fn flood_main() -> ! {
+    // Die with the parent even if it is killed outright and never gets to
+    // stop us: the flood must not keep writing to the user's terminal.
+    #[cfg(target_os = "linux")]
+    unsafe {
+        libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
+        if libc::getppid() == 1 {
+            std::process::exit(1);
+        }
+    }
     let Some(data) = fixture_bytes("plain") else {
         std::process::exit(1);
     };

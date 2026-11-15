@@ -124,6 +124,11 @@ Real usage surfaced four ways the numbers themselves could be polluted;
   which is an expected, not a failed, outcome. `resource.*` and
   `fire.fps` don't support `auto` yet and fall back to a fixed default
   with a stderr note.
+- **Interrupted runs clean up**: on Ctrl-C, SIGTERM or a closed terminal,
+  `run` kills its output flood, leaves the alternate screen, restores the
+  cursor and terminal mode, removes its lock file, and exits `128 + signal`
+  without writing a report. On Linux the flood also dies if `tbench` itself
+  is killed outright.
 - **Failed-trial rejection**: non-zero child exits and commands exceeding
   the 30-second per-trial safety limit are errors, never timing samples.
 - **Environment metadata on Linux** (best-effort — a fact with no sound

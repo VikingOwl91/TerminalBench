@@ -11,7 +11,8 @@ use std::os::fd::{FromRawFd, OwnedFd};
 use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 /// One `tbench run` at a time: they share results/.tbench.lock.
 static SERIAL: Mutex<()> = Mutex::new(());
@@ -37,9 +38,13 @@ fn open_pty() -> (OwnedFd, OwnedFd) {
     unsafe { (OwnedFd::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) }
 }
 
+/// The last bytes the "terminal" received.
+type Tail = Arc<Mutex<Vec<u8>>>;
+const TAIL_BYTES: usize = 1 << 16;
+
 /// Spawn tbench with the pty slave as its controlling terminal and keep
 /// reading the master so writes to the terminal never block.
-fn spawn_in_pty(args: &[&str], envs: &[(&str, &str)]) -> Child {
+fn spawn_in_pty(args: &[&str], envs: &[(&str, &str)]) -> (Child, Tail) {
     let (master, slave) = open_pty();
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_tbench"));
     cmd.args(args)
@@ -60,12 +65,75 @@ fn spawn_in_pty(args: &[&str], envs: &[(&str, &str)]) -> Child {
         });
     }
     let child = cmd.spawn().expect("spawn tbench");
+    let tail: Tail = Arc::default();
+    let sink = Arc::clone(&tail);
     std::thread::spawn(move || {
         let mut master = File::from(master);
         let mut buf = vec![0u8; 1 << 16];
-        while matches!(master.read(&mut buf), Ok(n) if n > 0) {}
+        while let Ok(n) = master.read(&mut buf) {
+            if n == 0 {
+                break;
+            }
+            let mut tail = sink.lock().unwrap();
+            tail.extend_from_slice(&buf[..n]);
+            let excess = tail.len().saturating_sub(TAIL_BYTES);
+            tail.drain(..excess);
+        }
     });
-    child
+    (child, tail)
+}
+
+fn wait_until(limit: Duration, mut done: impl FnMut() -> bool) -> bool {
+    let start = Instant::now();
+    while start.elapsed() < limit {
+        if done() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    done()
+}
+
+/// Pid of a live `tbench __flood` child of `parent`, if there is one.
+fn flood_child_of(parent: u32) -> Option<u32> {
+    for entry in std::fs::read_dir("/proc").ok()?.filter_map(|e| e.ok()) {
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|n| n.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let Ok(stat) = std::fs::read_to_string(entry.path().join("stat")) else {
+            continue;
+        };
+        let Some(rest) = stat.rsplit_once(')').map(|(_, rest)| rest) else {
+            continue;
+        };
+        let fields: Vec<&str> = rest.split_whitespace().collect();
+        if fields.first() == Some(&"Z") || fields.get(1) != Some(&parent.to_string().as_str()) {
+            continue;
+        }
+        let cmdline = std::fs::read(entry.path().join("cmdline")).unwrap_or_default();
+        if cmdline.split(|b| *b == 0).any(|arg| arg == b"__flood") {
+            return Some(pid);
+        }
+    }
+    None
+}
+
+fn alive(pid: u32) -> bool {
+    std::fs::read_to_string(format!("/proc/{pid}/stat"))
+        .ok()
+        .and_then(|stat| {
+            stat.rsplit_once(')')
+                .map(|(_, rest)| !rest.trim_start().starts_with('Z'))
+        })
+        .unwrap_or(false)
+}
+
+fn lock_path() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("results/.tbench.lock")
 }
 
 fn temp_report(tag: &str) -> PathBuf {
@@ -77,7 +145,7 @@ fn every_scenario_produces_results_inside_a_pty() {
     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let out = temp_report("full");
     let _ = std::fs::remove_file(&out);
-    let status = spawn_in_pty(
+    let (mut child, _tail) = spawn_in_pty(
         &[
             "run",
             "--shells",
@@ -93,9 +161,8 @@ fn every_scenario_produces_results_inside_a_pty() {
             out.to_str().unwrap(),
         ],
         &[("FIRE_SECS", "0.2")],
-    )
-    .wait()
-    .expect("wait for tbench");
+    );
+    let status = child.wait().expect("wait for tbench");
     assert!(
         status.success(),
         "run --strict failed ({status}): a scenario produced no results"
@@ -149,4 +216,92 @@ fn every_scenario_produces_results_inside_a_pty() {
     let env = &report["run_context"]["environment"];
     assert_eq!(env["terminal"]["status"], "known");
     assert_eq!(report["meta"]["meta_notes"], serde_json::Value::Null);
+}
+
+#[test]
+fn sigterm_stops_the_flood_and_removes_the_lock() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let out = temp_report("term");
+    let (mut child, _tail) = spawn_in_pty(
+        &[
+            "run",
+            "--scenario",
+            "resource-footprint",
+            "--runs",
+            "5",
+            "--settle",
+            "0",
+            "--output",
+            out.to_str().unwrap(),
+        ],
+        &[],
+    );
+    let tbench = child.id();
+
+    // idle settle and sampling come first; the flood starts after ~10 s
+    let mut flood = None;
+    assert!(
+        wait_until(Duration::from_secs(40), || {
+            flood = flood_child_of(tbench);
+            flood.is_some()
+        }),
+        "the load variant never started its flood"
+    );
+    let flood = flood.unwrap();
+    assert!(lock_path().is_file(), "no lock while running");
+
+    unsafe { libc::kill(tbench as i32, libc::SIGTERM) };
+    let status = child.wait().expect("wait for tbench");
+    assert_eq!(status.code(), Some(128 + libc::SIGTERM), "{status}");
+    assert!(
+        wait_until(Duration::from_secs(5), || !alive(flood)),
+        "flood pid {flood} outlived the interrupted run"
+    );
+    assert!(!lock_path().exists(), "lock left behind");
+    assert!(!out.exists(), "an interrupted run wrote a report");
+}
+
+#[test]
+fn sigint_during_fire_leaves_the_alternate_screen() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let out = temp_report("fire");
+    let (mut child, tail) = spawn_in_pty(
+        &[
+            "run",
+            "--scenario",
+            "fire",
+            "--runs",
+            "1",
+            "--settle",
+            "0",
+            "--output",
+            out.to_str().unwrap(),
+        ],
+        &[("FIRE_SECS", "20")],
+    );
+    let enter: &[u8] = b"\x1b[?1049h";
+    let leave: &[u8] = b"\x1b[?1049l";
+    let seen = |needle: &[u8]| {
+        let tail = tail.lock().unwrap();
+        tail.windows(needle.len()).rposition(|w| w == needle)
+    };
+    // The enter sequence scrolls out of the tail quickly; fps-speed frames
+    // arriving is the sign the alternate screen is active.
+    assert!(
+        wait_until(Duration::from_secs(10), || tail.lock().unwrap().len()
+            >= TAIL_BYTES),
+        "fire never started drawing"
+    );
+    std::thread::sleep(Duration::from_millis(300));
+
+    unsafe { libc::kill(child.id() as i32, libc::SIGINT) };
+    let status = child.wait().expect("wait for tbench");
+    assert_eq!(status.code(), Some(128 + libc::SIGINT), "{status}");
+    assert!(
+        wait_until(Duration::from_secs(2), || seen(leave).is_some()),
+        "terminal was left on the alternate screen"
+    );
+    let left_at = seen(leave).unwrap();
+    assert!(seen(enter).is_none_or(|entered_at| entered_at < left_at));
+    assert!(!lock_path().exists(), "lock left behind");
 }
