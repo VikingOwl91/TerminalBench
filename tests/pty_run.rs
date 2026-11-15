@@ -29,19 +29,23 @@ const ROWS: u16 = 24;
 
 fn open_pty() -> (OwnedFd, OwnedFd) {
     let (mut master, mut slave) = (-1, -1);
-    let mut size: libc::winsize = unsafe { std::mem::zeroed() };
-    size.ws_col = COLS;
-    size.ws_row = ROWS;
     let rc = unsafe {
         libc::openpty(
             &mut master,
             &mut slave,
             std::ptr::null_mut(),
             std::ptr::null_mut(),
-            &size,
+            std::ptr::null_mut(),
         )
     };
     assert_eq!(rc, 0, "openpty failed");
+    // Set the size with an ioctl: openpty's winsize parameter is *const on
+    // Linux and *mut on macOS, so one call site cannot satisfy both.
+    let mut size: libc::winsize = unsafe { std::mem::zeroed() };
+    size.ws_col = COLS;
+    size.ws_row = ROWS;
+    let rc = unsafe { libc::ioctl(master, libc::TIOCSWINSZ as _, &size) };
+    assert_eq!(rc, 0, "TIOCSWINSZ failed");
     unsafe { (OwnedFd::from_raw_fd(master), OwnedFd::from_raw_fd(slave)) }
 }
 
