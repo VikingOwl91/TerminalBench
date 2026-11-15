@@ -2,10 +2,11 @@
 //! 1.5×IQR outlier filtering, and the bootstrap CI used both by
 //! `--runs auto` convergence and by `compare`'s detail tables.
 //!
-//! Port of lib/stats.sh (zsh) — same estimators, same indices:
+//! Estimators and indices, unchanged since the original zsh
+//! implementation so numbers stay continuous across it:
 //! - median: mean of the two middle elements for even n
 //! - p95: nearest-rank rounded up (`(n*95 + 99) / 100`, clamped to [1, n])
-//! - stddev: population (divide by n), matching the zsh implementation
+//! - stddev: population (divide by n)
 //! - IQR: Tukey fences at Q1/Q3 via the `(n+1)/4` / `3(n+1)/4` indices
 
 pub fn median(samples: &[f64]) -> f64 {
@@ -93,8 +94,7 @@ pub fn iqr_filter(samples: &[f64]) -> (usize, Vec<f64>) {
 }
 
 /// Deterministic xorshift64* PRNG — fixed seeding keeps bootstrap CIs
-/// reproducible from the same samples (same rationale as lib/compare.py's
-/// fixed-seed `random.Random(0)`), without pulling in a rand crate.
+/// reproducible from the same samples, without pulling in a rand crate.
 pub struct Rng(u64);
 
 impl Rng {
@@ -138,7 +138,7 @@ pub fn bootstrap_median_ci(samples: &[f64], b: usize, seed: u64) -> Option<(f64,
 }
 
 /// Bootstrap CI half-width as a percentage of the median — the `--runs
-/// auto` convergence signal (lib/stats.sh used B=150; kept). Returns a
+/// auto` convergence signal (B=150 resamples). Returns a
 /// large sentinel when it can't be computed, so the caller keeps sampling.
 pub fn bootstrap_ci_halfwidth_pct(samples: &[f64]) -> f64 {
     if samples.len() < 3 {
@@ -155,7 +155,7 @@ pub fn bootstrap_ci_halfwidth_pct(samples: &[f64]) -> f64 {
 }
 
 /// Two-sided Mann-Whitney U test p-value, normal approximation with tie
-/// correction — port of lib/compare.py's `mann_whitney_p`.
+/// correction.
 pub fn mann_whitney_p(a: &[f64], b: &[f64]) -> Option<f64> {
     let (n1, n2) = (a.len(), b.len());
     if n1 == 0 || n2 == 0 {

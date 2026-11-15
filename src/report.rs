@@ -1,5 +1,5 @@
-//! Reporting Specification v1 document assembly — port of lib/report.sh.
-//! The wire format is the migration's fixed contract: schemas/
+//! Reporting Specification v1 document assembly.
+//! The wire format is a fixed contract: schemas/
 //! tbench-report-v1.schema.json plus the semantic rules in
 //! docs/reporting-spec-v1.md remain authoritative, and bin/tbench-validate
 //! must accept every report this module emits.
@@ -489,7 +489,7 @@ pub fn build_report(
     }
 
     // Explicit env overrides (CI / non-macOS hosts) — invalid values are
-    // ignored with a meta note, never fatal, matching lib/report.sh.
+    // ignored with a meta note, never fatal.
     if let Ok(v) = std::env::var("TBENCH_MACHINE_MODEL") {
         match trimmed_opaque_id(&v) {
             Some(m) => mac.machine_model = Some(m.to_string()),
@@ -663,9 +663,8 @@ pub fn filename_timestamp() -> String {
 
 /// Hidden `tbench __smoke-report`: one synthetic result per registered
 /// profile, driven through the real report assembly (env overrides and
-/// probes included). Exists for tests/report-v1.sh, which previously
-/// fabricated the same rows by sourcing lib/report.sh — this tests the
-/// actual additive emitter rather than a copied fixture.
+/// probes included). Exists for tests/report-v1.sh, so the suite tests the
+/// actual emitter rather than a copied fixture.
 pub fn smoke_rows() -> Vec<ResultRow> {
     let row = |metric: &str,
                unit: &str,

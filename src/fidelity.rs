@@ -1,4 +1,4 @@
-//! DECSET 2026 (synchronized output) probe — port of lib/fidelity.sh.
+//! DECSET 2026 (synchronized output) probe.
 //! Writes DECRQM (`CSI ? 2026 $ p`) to /dev/tty in raw mode and reads the
 //! terminal's automatic reply (`CSI ? 2026 ; Ps $ y`). Not a frame-skip
 //! detector: it only reports whether the terminal recognizes mode 2026.

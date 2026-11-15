@@ -1,6 +1,6 @@
-//! `tbench show` — human-readable recap of one report JSON. Port of
-//! lib/show.py, including the Metric guide legend; section grouping and
-//! unit display deliberately mirror compare's.
+//! `tbench show` — human-readable recap of one report JSON, including the
+//! Metric guide legend; section grouping and unit display deliberately
+//! mirror compare's.
 
 use serde_json::Value;
 
