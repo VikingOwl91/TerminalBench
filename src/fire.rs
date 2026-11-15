@@ -81,7 +81,7 @@ pub struct FireOutcome {
     pub region: (usize, usize), // cells actually rendered
 }
 
-fn winsize(fd: i32) -> (u16, u16) {
+pub(crate) fn winsize(fd: i32) -> (u16, u16) {
     let mut ws: libc::winsize = unsafe { std::mem::zeroed() };
     if unsafe { libc::ioctl(fd, libc::TIOCGWINSZ, &mut ws) } == 0 {
         (ws.ws_col, ws.ws_row)

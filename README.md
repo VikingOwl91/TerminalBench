@@ -144,6 +144,12 @@ Real usage surfaced four ways the numbers themselves could be polluted;
   - `extensions["org.terminalbench.host"]` records the kernel release,
     session type, CPU governor, platform profile, and the basis of the
     power and low-power facts.
+- **Run parameters**: `extensions["org.terminalbench.run"]` records the
+  requested `--runs`, `--warmup`, `--settle`, `--shells`, the scenarios in
+  the order they ran, those that produced no results, `FIRE_SECS`, and the
+  terminal size in cells. Extensions never affect conformance or the
+  comparability gate; they are there so a reader can see whether two
+  reports followed the same protocol.
 - **Environment metadata on macOS** (best-effort — omitted, not fatal,
   on failure): `meta.power_source` (`pmset -g batt`), `meta.low_power_mode`,
   `meta.machine_model`/`meta.cpu` (`sysctl`), and `meta.gpu`/
