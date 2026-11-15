@@ -316,6 +316,10 @@ fn cmd_run(args: &[String]) -> ExitCode {
         keep_samples,
     };
 
+    if let Some(mux) = report::multiplexer() {
+        eprintln!("tbench: running inside {mux}; render.throughput, scroll.proxy and fire.fps will measure {mux}, not the terminal emulator");
+    }
+
     let mut results = Vec::new();
     let mut skipped: Vec<&str> = Vec::new();
     for (i, sc) in scenarios.iter().enumerate() {

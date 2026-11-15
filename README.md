@@ -180,8 +180,9 @@ bin/tbench run --keep-samples --output results/baseline.json
 Rows are `metric [variant] (shell) (unit)`; columns are each file's
 `meta.terminal` (disambiguated with the timestamp if two files share the
 same terminal name). Cells show the median, with the best value in a row
-**bolded** — direction-aware, since `render.throughput` is
-higher-is-better and every other metric is lower-is-better. A metric
+**bolded** — direction-aware: `render.throughput` and `fire.fps` are
+higher-is-better, every other metric is lower-is-better (each result's
+`measurement.direction` is authoritative). A metric
 missing from a given file shows as `-` rather than dropping the row. A
 "Detail" table (p95/stddev, plus a bootstrap CI when `--keep-samples` data
 is present — see below) follows the main comparison.
@@ -261,7 +262,7 @@ An app that's already running when its turn comes up is **not quit** —
 `orchestrate` only warns that its existing windows may add load to the
 measurement, since silently closing a user's terminal session to get a
 cleaner benchmark would be a worse trade. An app name with no adapter
-(anything other than `ghostty`/`iterm`/`terminal`, case-insensitively) is
+(anything other than `ghostty`/`iterm`/`terminal`/`noa`, case-insensitively) is
 skipped with a warning rather than falling back to generic UI-scripting
 automation, which is fragile and would need its own (separate)
 Accessibility permission grant for a result that isn't guaranteed to work;
@@ -277,7 +278,7 @@ A single self-contained file — inline SVG + vanilla JS only, no external
 CDN/fonts/images — with one dot-and-interval chart per `metric`+variant+unit
 combination (never mixing units on one axis), grouped into sections in this
 order: Render Throughput, Latency, Resource, Shell. The report includes a
-**Wins per entity** tally, a **Results at a glance** table showing every
+**Results at a glance** table showing every
 entity's median and direction-aware competition rank for each metric (exact
 median ties share a rank: `1, 1, 3`), an **Overview vs baseline**, and the
 per-metric charts. Each chart:
@@ -343,7 +344,7 @@ this table and the sections below are the summary. `show` (and
 | Metric | Unit | Shell-scoped? | Variants | What it measures |
 |---|---|---|---|---|
 | `shell.startup` | ms | yes | — | `{shell} -i -c exit` wall-clock time — interactive startup including rc files |
-| `cmd.overhead` | μs | yes | — | `{shell} -c true` wall-clock time — shell spawn + builtin dispatch |
+| `cmd.overhead` | μs | yes | — | `{shell} -c true` wall-clock time — dominated by process spawn and shell initialization; not a differential against a direct exec |
 | `render.throughput` | MB/s, lines/s | no | `plain`, `ansi`, `cjk` | Producer-side completion rate for a fixed fixture written to the terminal |
 | `scroll.proxy` | ms | no | — | Proxy: wall-clock time until a large `cat` producer exits |
 | `resource.mem` | MB | no | `idle`, `load` | RSS of the terminal emulator's own GUI process |
@@ -548,15 +549,14 @@ semantic conformance, claim safety, or pairwise comparability; use
 ## Known limitations
 
 - `bin/tbench run` still only emits JSON (no Markdown report from `run`
-  itself — `compare` produces Markdown/HTML from existing JSON files); no
-  fish shell support; no `prompt.render` metric — deferred to later phases
+  itself — `compare` produces Markdown/HTML from existing JSON files); no `prompt.render` metric — deferred to later phases
   (proposal §6.6 extension 2/3).
 - `--runs auto` only converges for `shell.startup`/`cmd.overhead`/
   `render.throughput`/`scroll.proxy`; `resource.*`/
   `fire.fps` fall back to a fixed trial count with a stderr note.
 - The concurrent-run lock only detects other `tbench run` processes, not
   unrelated system load (a build, backups, etc.) — see caveat above.
-- `orchestrate` is macOS-only, supports `ghostty`/`iterm`/`terminal` only
+- `orchestrate` is macOS-only, supports `ghostty`/`iterm`/`terminal`/`noa` only
   (see above for adding an adapter), and can't guarantee the new window
   actually has keyboard/tty focus — that's an emulator implementation
   detail, and an unfocused window could skew `render.throughput` etc.

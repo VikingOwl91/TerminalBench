@@ -1138,26 +1138,6 @@ fn build_glance_table(order: &[Key], rows: &HashMap<Key, Cells>, labels: &[Strin
     )
 }
 
-fn build_win_tally(
-    order: &[Key],
-    rows: &HashMap<Key, Cells>,
-    labels: &[String],
-) -> (Vec<usize>, usize) {
-    let mut tally = vec![0usize; labels.len()];
-    let mut total = 0;
-    for key in order {
-        let cells = &rows[key];
-        if cells.len() <= 1 {
-            continue;
-        }
-        total += 1;
-        if let Some(idx) = best_index(&key.0, cells) {
-            tally[idx] += 1;
-        }
-    }
-    (tally, total)
-}
-
 // --- HTML: full document --------------------------------------------------
 
 fn build_html_report(
@@ -1179,45 +1159,6 @@ fn build_html_report(
             .push(key.clone());
     }
 
-    let (win_tally, win_total) = build_win_tally(&order, &rows, labels);
-    let mut ranked: Vec<(usize, usize)> = win_tally
-        .iter()
-        .enumerate()
-        .filter(|(_, &c)| c > 0)
-        .map(|(i, &c)| (i, c))
-        .collect();
-    ranked.sort_by_key(|entry| std::cmp::Reverse(entry.1));
-    let summary_html = if !ranked.is_empty() && win_total > 0 {
-        let (leader_idx, leader_count) = ranked[0];
-        let headline = format!(
-            "<p class=\"tb-summary-headline\"><span class=\"tb-crown\">\u{1f3c6}</span> <strong>{}</strong> \u{2014} best in {leader_count} of {win_total} metrics</p>",
-            esc(&labels[leader_idx])
-        );
-        // Win bars for every entity (zero-win entities included), ranked.
-        let mut standing: Vec<(usize, usize)> = ranked.clone();
-        for i in 0..labels.len() {
-            if !standing.iter().any(|(idx, _)| *idx == i) {
-                standing.push((i, 0));
-            }
-        }
-        let bars: String = standing
-            .iter()
-            .map(|(i, c)| {
-                let pct = *c as f64 / win_total as f64 * 100.0;
-                format!(
-                    "<div class=\"tb-win-row\"><span class=\"tb-win-label\">{}</span><div class=\"tb-win-track\"><div class=\"tb-win-fill\" style=\"width:{pct:.1}%;background:var(--series-{})\"></div></div><span class=\"tb-win-count\">{c} <span class=\"tb-win-of\">/ {win_total}</span></span></div>",
-                    esc(&labels[*i]),
-                    i % PALETTE.len() + 1
-                )
-            })
-            .collect();
-        format!(
-            "<section class=\"tb-card tb-summary\">{headline}<p class=\"tb-summary-sub\">Wins per entity \u{2014} number of metrics where that file has the direction-aware best median.</p><div class=\"tb-win-bars\">{bars}</div></section>"
-        )
-    } else {
-        String::new()
-    };
-
     let legend_items: String = (0..labels.len())
         .map(|i| {
             format!(
@@ -1227,7 +1168,7 @@ fn build_html_report(
             )
         })
         .collect();
-    let legend_glyphs = "<div class=\"tb-legend-glyphs\"><span class=\"tb-legend-glyph\"><span class=\"tb-glyph-star\">\u{2605}</span> best = direction-aware best median</span><span class=\"tb-legend-glyph\">#N / Rank N = direction-aware competition rank (exact ties share a rank)</span><span class=\"tb-legend-glyph\"><span class=\"tb-glyph-dot\"></span> dot = median \u{00b7} band/whisker = 95% CI (or median \u{2192} p95 without samples)</span><span class=\"tb-legend-glyph\">hover/focus a mark for rank, median, p95, stddev, runs (and 95% CI)</span><span class=\"tb-legend-glyph\">median = typical run \u{00b7} p95 = worst-case-ish \u{00b7} stddev = run-to-run spread</span></div>";
+    let legend_glyphs = "<div class=\"tb-legend-glyphs\"><span class=\"tb-legend-glyph\"><span class=\"tb-glyph-star\">\u{2605}</span> best = direction-aware best median</span><span class=\"tb-legend-glyph\">#N / Rank N = direction-aware competition rank (exact ties share a rank)</span><span class=\"tb-legend-glyph\"><span class=\"tb-glyph-dot\"></span> dot = median \u{00b7} band/whisker = 95% CI (or median \u{2192} p95 without samples)</span><span class=\"tb-legend-glyph\">hover/focus a mark for rank, median, p95, stddev, runs (and 95% CI)</span><span class=\"tb-legend-glyph\">median = typical trial \u{00b7} p95 = 95th percentile of the retained trials (the slow tail only for lower-is-better metrics) \u{00b7} stddev = spread across trials within one run, not across runs</span></div>";
 
     let overview_svg = build_overview_svg(&order, &rows, labels, baseline_idx);
     let overview_html = if !overview_svg.is_empty() {
@@ -1373,10 +1314,9 @@ fn build_html_report(
         .join(", ");
 
     format!(
-        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>tbench compare</title>\n<style>\n{css}\n</style>\n</head>\n<body class=\"viz-root\">\n<h1>tbench compare</h1>\n<div class=\"tb-meta\">Sources: {sources}</div>\n{summary_html}\n{glance_html}\n<div class=\"tb-legend\">{legend_items}</div>\n{legend_glyphs}\n{overview_html}\n{sections}\n<section class=\"tb-card tb-section\">\n  <h2>Table view</h2>\n  <table class=\"tb-table\">\n    <caption class=\"tb-table-caption\">{table_caption}</caption>\n    <thead>{table_header}</thead>\n    <tbody>{table_body}</tbody>\n  </table>\n</section>\n{guide_html}\n<div id=\"tb-tooltip\" role=\"tooltip\"></div>\n<script>\n{SCRIPT}\n</script>\n</body>\n</html>\n",
+        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n<title>tbench compare</title>\n<style>\n{css}\n</style>\n</head>\n<body class=\"viz-root\">\n<h1>tbench compare</h1>\n<div class=\"tb-meta\">Sources: {sources}</div>\n{glance_html}\n<div class=\"tb-legend\">{legend_items}</div>\n{legend_glyphs}\n{overview_html}\n{sections}\n<section class=\"tb-card tb-section\">\n  <h2>Table view</h2>\n  <table class=\"tb-table\">\n    <caption class=\"tb-table-caption\">{table_caption}</caption>\n    <thead>{table_header}</thead>\n    <tbody>{table_body}</tbody>\n  </table>\n</section>\n{guide_html}\n<div id=\"tb-tooltip\" role=\"tooltip\"></div>\n<script>\n{SCRIPT}\n</script>\n</body>\n</html>\n",
         css = css,
         sources = sources,
-        summary_html = summary_html,
         glance_html = glance_html,
         legend_items = legend_items,
         legend_glyphs = legend_glyphs,
@@ -1586,16 +1526,6 @@ __PALETTE_LIGHT__
     padding: var(--space-7) var(--space-8); margin-bottom: var(--space-7);
     box-shadow: 0 1px 2px rgba(25, 28, 32, 0.04);
   }
-  .tb-summary-headline { margin: 0 0 var(--space-2); font-size: var(--fs-2xl); }
-  .tb-crown { margin-right: var(--space-1); }
-  .tb-summary-sub { margin: 0 0 var(--space-5); color: var(--text-secondary); font-size: var(--fs-base); }
-  .tb-win-bars { display: grid; gap: var(--space-3); }
-  .tb-win-row { display: grid; grid-template-columns: 220px 1fr 72px; align-items: center; gap: var(--space-5); }
-  .tb-win-label { font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tb-win-track { height: 14px; background: var(--noise-bg); border-radius: 7px; overflow: hidden; }
-  .tb-win-fill { height: 100%; border-radius: 7px; min-width: 2px; }
-  .tb-win-count { font-size: var(--fs-md); font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
-  .tb-win-of { color: var(--text-secondary); font-weight: 400; }
   .tb-glance-wrap { overflow-x: auto; }
   table.tb-glance { border-collapse: collapse; width: 100%; font-size: var(--fs-base); font-variant-numeric: tabular-nums; }
   table.tb-glance th, table.tb-glance td { text-align: left; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--line); vertical-align: middle; }

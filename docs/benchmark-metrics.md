@@ -28,7 +28,7 @@ Common behavior:
 | Metric | Unit | Direction | Shell-scoped? | Variants | Measures (one line) |
 |---|---|---|---|---|---|
 | `shell.startup` | ms | low | yes | — | Fresh interactive shell process startup time |
-| `cmd.overhead` | μs | low | yes | — | Shell process spawn + builtin dispatch cost |
+| `cmd.overhead` | μs | low | yes | — | Wall-clock of `{shell} -c true` (spawn + init + builtin) |
 | `render.throughput` | MB/s, lines/s | high | no | `plain` / `ansi` / `cjk` | Producer-side PTY output throughput |
 | `scroll.proxy` | ms | low | no | — | Time until the large-output producer exits (proxy) |
 | `resource.mem` | MB | low | no | `idle` / `load` | RSS of the emulator's GUI process |
@@ -65,8 +65,10 @@ means it measures the terminal emulator itself, runs once regardless of
 ## cmd.overhead — command dispatch overhead
 
 - **What it measures**: wall-clock time of `{shell} -c true` = shell
-  process spawn + dispatch of the `true` builtin + exit. This is the fixed
-  per-invocation cost a script pays every time it launches a shell.
+  process spawn + shell initialization + the `true` builtin + exit. This is the fixed
+  per-invocation cost a script pays every time it launches a shell. It is
+  the raw wall-clock, not the shell-vs-direct-exec differential the original
+  proposal described, so process spawn dominates the figure.
 - **How**: same as `shell.startup` (`rust-timer`). No rc files are loaded
   (non-interactive), so the difference from `shell.startup` is
   approximately the rc-file contribution.

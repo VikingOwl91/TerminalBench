@@ -23,7 +23,7 @@ test: unit conformance ## All tests (Rust unit tests + Reporting Spec v1 suite)
 unit: ## Rust unit tests
 	$(CARGO) test
 
-conformance: build ## Reporting Spec v1 regression suite (tests/report-v1.sh, 14 checks)
+conformance: build ## Reporting Spec v1 regression suite (tests/report-v1.sh)
 	zsh tests/report-v1.sh
 
 lint: fmt-check clippy ## rustfmt --check + clippy (deny warnings)

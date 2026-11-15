@@ -365,6 +365,25 @@ pub fn detect_terminal() -> String {
     }
 }
 
+/// Terminal multiplexer the run is nested in, from the environment variables
+/// tmux and GNU screen export. Other pty intermediaries (script, ssh) are not
+/// detectable this way.
+pub fn multiplexer() -> Option<&'static str> {
+    let set = |name: &str| std::env::var_os(name).is_some_and(|v| !v.is_empty());
+    if set("TMUX") {
+        Some("tmux")
+    } else if set("STY") {
+        Some("screen")
+    } else {
+        None
+    }
+}
+
+/// Metrics whose workload is written to the controlling tty.
+pub fn is_tty_bound(metric: &str) -> bool {
+    matches!(metric, "render.throughput" | "scroll.proxy" | "fire.fps")
+}
+
 #[derive(Default)]
 struct MacosMeta {
     power_source: Option<String>,
@@ -480,7 +499,11 @@ pub fn build_report(results: &[ResultRow], sync_output: &str, app: Option<&str>)
     let mut shell_versions = Vec::new();
     let mut shell_version_missing = false;
     for shell in &measured_shells {
-        match cmd_stdout(shell, &["--version"]) {
+        // First line only: bash prints its license text after the version.
+        match cmd_stdout(shell, &["--version"])
+            .and_then(|out| out.lines().next().map(|line| line.trim().to_string()))
+            .filter(|line| !line.is_empty())
+        {
             Some(version) => shell_versions.push(format!("{shell}={version}")),
             None => shell_version_missing = true,
         }
@@ -528,6 +551,14 @@ pub fn build_report(results: &[ResultRow], sync_output: &str, app: Option<&str>)
                         .into(),
                 );
             }
+        }
+    }
+
+    if let Some(mux) = multiplexer() {
+        if results.iter().any(|row| is_tty_bound(&row.metric)) {
+            meta_notes.push(format!(
+                "run inside {mux}: render.throughput, scroll.proxy and fire.fps wrote to the {mux} pty and describe {mux}, not the terminal emulator"
+            ));
         }
     }
 
