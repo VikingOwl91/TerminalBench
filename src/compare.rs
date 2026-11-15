@@ -15,7 +15,7 @@ use crate::stats::{bootstrap_median_ci, mann_whitney_p};
 // reports): metrics where a HIGHER median is better. Same list as show
 // and trend use.
 fn higher_is_better_fallback(metric: &str) -> bool {
-    metric == "render.throughput"
+    matches!(metric, "render.throughput" | "fire.fps")
 }
 
 // Light-theme hex per entity, dataviz reference palette slots 1-8. Color is
@@ -1959,6 +1959,8 @@ mod tests {
         assert!(!is_better("shell.startup", &higher, &lower));
         // higher-is-better fallback: render.throughput.
         assert!(is_better("render.throughput", &higher, &lower));
+        // legacy fire.fps rows carry no direction either
+        assert!(is_better("fire.fps", &higher, &lower));
         // measurement.direction overrides the fallback.
         let hi_dir =
             serde_json::json!({"median": 2.0, "measurement": {"direction": "higher-is-better"}});
