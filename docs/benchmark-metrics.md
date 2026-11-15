@@ -84,9 +84,9 @@ means it measures the terminal emulator itself, runs once regardless of
 
 ## render.throughput — draw throughput
 
-- **What it measures**: `cat`s a fixed-size fixture file straight to the
+- **What it measures**: writes a fixed fixture straight to the
   terminal and derives **MB/s** and **lines/s** (two rows) from the
-  wall-clock time. It measures the terminal emulator tbench is running
+  wall-clock time of that write. It measures the terminal emulator tbench is running
   inside — more precisely its PTY drain rate — not shell performance.
 - **Variants**:
   - `plain` — ASCII-only log-like text
@@ -94,14 +94,19 @@ means it measures the terminal emulator itself, runs once regardless of
   - `cjk` — mixed full-width Japanese text and emoji. UTF-8 encodes those
     characters as 3-4 bytes each, so **`cjk`'s MB/s is not byte-for-byte
     comparable** to `plain`/`ansi`; use lines/s to compare across variants.
-  - Fixtures are generated lazily on first use (built into the binary;
-    same content as the retired `fixtures/gen-fixtures.sh`).
+  - Each fixture is 100,000 copies of one line, generated in memory by the
+    binary (same bytes as the fixture files earlier versions fed to
+    `cat`).
+- **How**: a child `tbench` process builds the fixture, then times only
+  its `write` to the controlling terminal and reports it (backend
+  `"rust-writer"`). Process startup and fixture generation are outside the
+  timed span; a child is used so a trial can be killed after 30 s if the
+  terminal stops reading. Earlier backends timed a whole external `cat`
+  process, so their values are not interchangeable with these.
 - **Unit / direction**: MB/s and lines/s, higher is better.
 - **Caveats**: this relies on `write()` blocking on PTY flow control — it
   measures a **drain rate**, not confirmed on-screen rendering (an emulator
-  that skips frames can look faster). The wall-clock boundary also includes
-  `cat` process creation and fixture file reads, so executable and page-cache
-  state are part of the result. Whenever
+  that skips frames can look faster). Whenever
   `meta.synchronized_output_supported` isn't `"supported"`,
   `meta.frame_skip_risk_note` flags this. Without a controlling terminal
   (`/dev/tty`, e.g. CI), the metric is skipped; it is never relabelled raw
@@ -109,14 +114,14 @@ means it measures the terminal emulator itself, runs once regardless of
 
 ## scroll.proxy — scroll performance (proxy)
 
-- **What it measures**: total wall-clock time for a large `cat` producer to
-  finish writing to the controlling terminal.
+- **What it measures**: total wall-clock time for the `plain` fixture to be
+  written to the controlling terminal. It is the same measurement as
+  `render.throughput [plain]`, reported as a duration.
 - **How**: no native scroll/redraw-event API exists, so "time until output
   completes" is used as a **proxy indicator** (proposal §3 item 3).
 - **Unit / direction**: ms, lower is better.
 - **Caveats**: a coarse proxy that does not observe scrollback settling or
-  any redraw event. It also includes `cat` process creation and fixture file
-  reads. Like `render.throughput`, it is skipped without a controlling terminal.
+  any redraw event. Like `render.throughput`, it is skipped without a controlling terminal.
 
 ## input.latency — retired
 

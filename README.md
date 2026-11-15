@@ -418,7 +418,7 @@ this table and the sections below are the summary. `show` (and
 | `shell.startup` | ms | yes | — | `{shell} -i -c exit` wall-clock time — interactive startup including rc files |
 | `cmd.overhead` | μs | yes | — | `{shell} -c true` wall-clock time — dominated by process spawn and shell initialization; not a differential against a direct exec |
 | `render.throughput` | MB/s, lines/s | no | `plain`, `ansi`, `cjk` | Producer-side completion rate for a fixed fixture written to the terminal |
-| `scroll.proxy` | ms | no | — | Proxy: wall-clock time until a large `cat` producer exits |
+| `scroll.proxy` | ms | no | — | Proxy: wall-clock time to write the `plain` fixture to the terminal |
 | `resource.mem` | MB | no | `idle`, `load` | RSS of the terminal emulator's own process |
 | `resource.cpu` | % | no | `idle`, `load` | CPU use of the terminal emulator's own process (Linux: CPU time per 1 s window; macOS: `ps %cpu`) |
 | `fire.fps` | fps | no | `<columns>x<rows>` | Producer-completed frames/second of the deterministic DOOM-fire stream at the recorded region |
@@ -533,8 +533,8 @@ Other systems are skipped.
 ### Proxy/approximate metrics — read before trusting the numbers
 
 - `scroll.proxy` has **no native scroll or redraw-event API** behind it. It
-  is literally the wall-clock time for a large `cat` producer to finish
-  writing — it does not observe terminal settling and is not a true redraw-event
+  is literally the wall-clock time to write the `plain` fixture, the same
+  measurement as `render.throughput [plain]` — it does not observe terminal settling and is not a true redraw-event
   measurement (proposal §3 item 3).
 - `render.throughput`/`scroll.proxy`/`fire.fps` describe whatever reads the
   controlling tty. Inside `tmux` or GNU `screen` that is the multiplexer,
@@ -545,9 +545,11 @@ Other systems are skipped.
   (`/dev/tty`) to measure the registered PTY workload. Without one
   (non-interactive/CI contexts), those metrics are skipped; no `/dev/null`
   substitute is reported under the same profile.
-- `render.throughput` and `scroll.proxy` time the complete `cat` process,
-  including process creation and fixture reads; page-cache state is therefore
-  part of these producer-side proxy results.
+- `render.throughput` and `scroll.proxy` time only the write of an
+  in-memory fixture to the terminal (backend `rust-writer`). Reports from
+  earlier versions timed a whole external `cat` process including its
+  startup and file read (backend `rust-timer`); the gate treats the two as
+  NOT_COMPARABLE.
 - `fire.fps` reports frames/second, but — like `render.throughput` — it is
   a producer-side PTY-write-completion proxy, not a confirmed on-screen
   frame rate; see the caveat above.
@@ -567,6 +569,7 @@ dependency — warmup + outlier handling, hyperfine's main advantages over
 the old fallback, are now built in.
 
 Each result object includes a `"backend"` field (`"rust-timer"`,
+`"rust-writer"` for `render.throughput`/`scroll.proxy`,
 `"ps"` or `"procfs"` for `resource.*`,
 `"fire-v2-overlapped"` for `fire.fps`) so reports are traceable to the
 backend that produced them. Reports from the earlier backends
@@ -594,7 +597,9 @@ instead of being skipped.
 ## Requirements
 
 - A Rust toolchain to build (`cargo build --release`); the result is one
-  self-contained binary with no runtime dependencies
+  binary that carries its scenarios and fixtures, so `cargo install --path .`
+  gives a `tbench` that works from any directory (reports go to
+  `./results/`)
 - the shells being benchmarked (`zsh`/`bash`/... ) on `PATH`
 - a controlling terminal, for `render.throughput`/`scroll.proxy`/
   `fire.fps` — unavailable metrics
@@ -602,13 +607,17 @@ instead of being skipped.
   different workload; `run` lists the scenarios that produced no results,
   and `--strict` turns that into exit `1`
 
-No runtime dependencies: hyperfine, python3, and a C compiler are no
-longer needed (`compare`/`show`/`trend`/`validate` are built in, and the
-DOOM-fire workload is an integrated port of the retired C tool with an
-identical byte stream). YAML scenario files keep the fixed flat
-`key: value` structure, parsed by the built-in reader. Fixtures for
-`render.throughput`/`scroll.proxy` are generated lazily on first use
-(same content as the retired `fixtures/gen-fixtures.sh`) and gitignored.
+hyperfine, python3, a C compiler and `cat` are not needed at run time
+(`compare`/`show`/`trend`/`validate` are built in, the DOOM-fire workload
+is an integrated port of the retired C tool with an identical byte stream,
+and the output fixtures are generated in memory). The binary still calls a
+few standard tools: `uname` and `date` everywhere, each measured shell with
+`--version`, `ps` for `resource.*` on macOS, and `pmset`, `sysctl`,
+`system_profiler` and `osascript` on macOS for metadata and `orchestrate`.
+
+The scenario files are compiled in. A `scenarios/` directory next to the
+binary or in the working directory takes precedence, which is what a
+checkout uses; the files keep the fixed flat `key: value` structure.
 
 ## Directory layout
 
@@ -617,9 +626,9 @@ bin/tbench           # thin launcher: builds (if needed) and execs the Rust bina
 bin/tbench-validate  # thin launcher for `tbench validate` (Reporting Spec v1 CLI)
 src/main.rs          # CLI dispatch (run/list/show/compare/trend/orchestrate/validate)
 src/stats.rs         # median/p95/stddev, IQR, bootstrap CI, Mann-Whitney
-src/measure.rs       # rust-timer backend, adaptive sampling, output flood
+src/measure.rs       # process timer, terminal writer, adaptive sampling, output flood
 src/scenario.rs      # scenarios/*.yaml loading (flat key: value reader)
-src/runner.rs        # scenario kind dispatch, fixtures, pty latency
+src/runner.rs        # scenario kind dispatch
 src/lock.rs          # results/.tbench.lock concurrent-run detection
 src/resource.rs      # terminal-PID discovery, resource.mem/resource.cpu
 src/procfs.rs        # Linux /proc readers (pty-master owner, RSS, PSS, CPU time)

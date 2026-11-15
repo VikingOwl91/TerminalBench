@@ -45,7 +45,7 @@ pub const METRIC_SUMMARIES: &[(&str, &str)] = &[
     ("shell.startup", "fresh interactive shell process startup (`shell -i -c exit`, rc files included), wall-clock; OS caches are not cleared"),
     ("cmd.overhead", "wall-clock of `shell -c true`: process spawn + shell init + builtin; not a differential against a direct exec"),
     ("render.throughput", "producer-side PTY completion rate for a fixed fixture (plain/ansi/cjk); display presentation is not observed"),
-    ("scroll.proxy", "proxy: wall-clock until a large `cat` producer exits; scrollback settling is not observed"),
+    ("scroll.proxy", "proxy: wall-clock to write the plain fixture to the terminal; scrollback settling is not observed"),
     ("input.latency", "retired: kernel PTY line-discipline echo on a fresh pty, which never involved the terminal emulator; shown for older reports only"),
     ("resource.mem", "RSS of the terminal emulator's own process (idle / under flood load)"),
     ("resource.cpu", "CPU use of the emulator's own process (procfs: CPU time per 1 s window; ps: macOS decayed average, directional only)"),
