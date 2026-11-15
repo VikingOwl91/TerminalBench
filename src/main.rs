@@ -377,6 +377,33 @@ fn cmd_run(args: &[String]) -> ExitCode {
             skipped.push(&sc.name);
         }
     }
+    {
+        // Run parameters: enough to tell whether two reports followed the
+        // same protocol. Recorded as an extension, so it never affects
+        // conformance or the comparability gate.
+        use std::os::fd::AsRawFd;
+        let tty = std::fs::File::options()
+            .write(true)
+            .open("/dev/tty")
+            .ok()
+            .map(|f| fire::winsize(f.as_raw_fd()))
+            .filter(|(cols, rows)| *cols > 0 && *rows > 0);
+        let ran_fire = scenarios.iter().any(|sc| sc.kind() == "fire");
+        cfg.extensions.borrow_mut().insert(
+            "org.terminalbench.run".to_string(),
+            serde_json::json!({
+                "requested_runs": runs_raw,
+                "warmup": warmup,
+                "settle_secs": settle,
+                "shells": cfg.shells,
+                "keep_samples": keep_samples,
+                "scenarios": scenarios.iter().map(|sc| sc.name.as_str()).collect::<Vec<_>>(),
+                "scenarios_without_results": skipped,
+                "fire_secs": if ran_fire { std::env::var("FIRE_SECS").ok() } else { None },
+                "tty": tty.map(|(cols, rows)| serde_json::json!({"cols": cols, "rows": rows})),
+            }),
+        );
+    }
     if !skipped.is_empty() {
         eprintln!(
             "tbench: {} of {} scenarios produced no results: {}",
