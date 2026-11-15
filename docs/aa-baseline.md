@@ -75,3 +75,32 @@ and about half the time at 10%; +20% is always caught.
 The splits reuse 12 back-to-back runs from one session. Drift between
 sessions (thermal state, background load, a reboot) is not in this data and
 will make real false failures more frequent than shown.
+
+## The 1-point floor for percentage rows
+
+The gate ignores a move of 1 percentage point or less on a percentage-unit
+row with a non-zero baseline. `resource.cpu` on Linux is CPU time per 1 s
+window in clock ticks, so 1 point is one tick, and a small idle load makes
+the per-run median land on 1 or 2 depending on where the windows fall. That
+is a +100% relative change with nothing behind it.
+
+Measured with 8 runs of `resource-footprint` against a pty relay whose own
+process burns about 1.5% of a core while idle. The idle `resource.cpu`
+medians of the 8 runs were 1, 1, 1, 1, 1, 2, 1, 2.
+
+| Comparison | Threshold | Without the floor (`--min-points 0`) | With the floor (default) |
+|---|---|---|---|
+| 1 run vs 1, idle `resource.cpu` row | 2%, 5%, 10% and 50% alike | 12 of 56 ordered pairs fail (21.4%) | 0 of 56 |
+| 4 runs vs 4, idle `resource.cpu` row | 0% to 10% | 0 of 70 splits | 0 of 70 |
+| 4 runs vs 4, whole report | 0% | 3 of 70 splits | 2 of 70 |
+| 4 runs vs 4, whole report | 2% to 10% | no difference | no difference |
+
+- With one run per side the floor is what stops the artifact: no relative
+  threshold below 100% does, because the change is always exactly +100%.
+- With 4 runs per side the run-level median and significance test already
+  absorb it on this data; the floor changes one split at a 0% threshold.
+- The cost: a real idle-CPU change of 1 point or less cannot be detected,
+  which is also the resolution of the measurement.
+
+Reproduce with `tbench aa --from <reports> --min-points 0` against the
+default. The same tool reproduces the 4-vs-4 figures in the section above.
