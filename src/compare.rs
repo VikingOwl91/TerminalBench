@@ -172,21 +172,6 @@ fn is_better(metric: &str, a: &Value, b: &Value) -> bool {
     }
 }
 
-fn best_index(metric: &str, cells: &Cells) -> Option<usize> {
-    let mut best: Option<usize> = None;
-    for (&idx, res) in cells.iter() {
-        match best {
-            None => best = Some(idx),
-            Some(b) => {
-                if is_better(metric, res, &cells[&b]) {
-                    best = Some(idx);
-                }
-            }
-        }
-    }
-    best
-}
-
 /// Direction-aware competition ranking by exact median value.
 ///
 /// A cell's rank is one plus the number of strictly better cells, so exact
@@ -328,14 +313,16 @@ fn build_comparison_table(reports: &[Value], labels: &[String]) -> String {
     for key in &order {
         let cells = &rows[key];
         let metric = &key.0;
-        let best_idx = best_index(metric, cells);
+        // Bold only a real winner: with every median tied there is none.
+        let ranks = competition_ranks(metric, cells);
+        let has_winner = ranks.values().any(|rank| *rank > 1);
         let mut cell_strs = Vec::new();
         for idx in 0..n {
             match cells.get(&idx) {
                 None => cell_strs.push("-".to_string()),
                 Some(res) => {
                     let mut val = fmtv(median(res));
-                    if Some(idx) == best_idx && cells.len() > 1 {
+                    if has_winner && ranks[&idx] == 1 {
                         val = format!("**{val}**");
                     }
                     cell_strs.push(val);
@@ -1862,6 +1849,33 @@ mod tests {
             .contains("#N / Rank N = direction-aware competition rank (exact ties share a rank)"));
         assert!(html
             .contains("Cells: direction-aware competition rank \u{00b7} median / p95 / stddev."));
+    }
+
+    #[test]
+    fn markdown_table_bolds_winners_but_not_all_tied_rows() {
+        let report = |startup: f64, overhead: f64| {
+            serde_json::json!({"results": [
+                {"metric": "shell.startup", "shell": "zsh", "unit": "ms", "median": startup,
+                 "measurement": {"direction": "lower-is-better"}},
+                {"metric": "cmd.overhead", "shell": "zsh", "unit": "us", "median": overhead,
+                 "measurement": {"direction": "lower-is-better"}}
+            ]})
+        };
+        let labels = vec!["a".to_string(), "b".to_string(), "c".to_string()];
+        let table = build_comparison_table(
+            &[report(7.0, 900.0), report(7.0, 900.0), report(7.0, 950.0)],
+            &labels,
+        );
+        // every file tied: nothing bold
+        assert!(
+            table.contains("| shell.startup (zsh) (ms) | 7.00 | 7.00 | 7.00 |"),
+            "{table}"
+        );
+        // two files share the best median: both bold, the third is not
+        assert!(
+            table.contains("| cmd.overhead (zsh) (μs) | **900.00** | **900.00** | 950.00 |"),
+            "{table}"
+        );
     }
 
     #[test]

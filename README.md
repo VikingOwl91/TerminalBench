@@ -180,7 +180,8 @@ bin/tbench run --keep-samples --output results/baseline.json
 Rows are `metric [variant] (shell) (unit)`; columns are each file's
 `meta.terminal` (disambiguated with the timestamp if two files share the
 same terminal name). Cells show the median, with the best value in a row
-**bolded** — direction-aware: `render.throughput` and `fire.fps` are
+**bolded** (every cell sharing the best median, and none when all files
+tie) — direction-aware: `render.throughput` and `fire.fps` are
 higher-is-better, every other metric is lower-is-better (each result's
 `measurement.direction` is authoritative). A metric
 missing from a given file shows as `-` rather than dropping the row. A
