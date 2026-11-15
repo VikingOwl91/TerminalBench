@@ -65,6 +65,11 @@ names said.
 - An interrupted `run` exits `128 + signal` and writes no report.
 - `compare`'s Markdown table no longer bolds a row in which every file
   ties; it bolds every cell that shares the best median.
+- `trend` calls a change better or worse only beyond a noise band
+  (`--noise`, default 5%; 1 point for percentage rows). Smaller changes
+  read `(within noise)`. The column is headed `Δ` instead of `Δ%`.
+- `compare` ranks `fire.fps` from pre-v1 reports (no direction field) as
+  higher-is-better. It used to mark the slowest as best.
 - `--keep-samples` arrays are in trial order, not sorted.
 - `meta.shell` holds the first line of each shell's `--version` output.
 
