@@ -189,8 +189,11 @@ is present — see below) follows the main comparison.
 `--threshold` mode only accepts exactly 2 files (baseline, then latest) and
 exits `0` if nothing regressed past the threshold, or `3` with a
 regressions table listing metric/baseline/latest/% change if something did
-— suitable for a CI gate on dotfiles/config changes. `--threshold` works
-the same way regardless of `--format`.
+— suitable for a CI gate on dotfiles/config changes. A baseline row with
+no counterpart in the latest report also exits `3`: a metric that
+disappeared cannot pass the gate. The threshold must be a non-negative
+percentage (`10%` or `10`); anything else is a usage error (exit `2`).
+`--threshold` works the same way regardless of `--format`.
 
 ### Statistical rigor (`--keep-samples`, bootstrap CI, significance)
 
@@ -495,7 +498,8 @@ from the section above.
 - a controlling terminal, for `render.throughput`/`scroll.proxy`/
   `fire.fps` — unavailable metrics
   are skipped with an actionable warning rather than replaced by a
-  different workload
+  different workload; `run` lists the scenarios that produced no results,
+  and `--strict` turns that into exit `1`
 
 No runtime dependencies: hyperfine, python3, and a C compiler are no
 longer needed (`compare`/`show`/`trend`/`validate` are built in, and the

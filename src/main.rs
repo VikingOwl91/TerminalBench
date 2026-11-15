@@ -28,7 +28,7 @@ fn usage() -> &'static str {
 
 Usage:
   tbench run [--scenario NAME] [--shells zsh,bash] [--runs N] [--app NAME]
-             [--output PATH]
+             [--strict] [--output PATH]
   tbench list
   tbench show [FILE]
   tbench compare FILE FILE [FILE ...] [--format markdown|html] [--output PATH] [--baseline NAME]
@@ -58,6 +58,9 @@ Options (run):
   --force           Skip the other-tbench-run check/wait instead of waiting
                     up to 120s — results may be polluted by cross-run
                     interference if one really is running
+  --strict          Exit 1 (after writing the report) if any scenario produced
+                    no results; by default skipped scenarios are only listed
+                    on stderr
   --app NAME        Record NAME as the report's terminal/app identity instead
                     of detecting it from TERM_PROGRAM; wins over the
                     TBENCH_TERMINAL_ID environment override. Must be a
@@ -204,6 +207,7 @@ fn cmd_run(args: &[String]) -> ExitCode {
     let mut warmup: usize = 3;
     let mut keep_samples = false;
     let mut force = false;
+    let mut strict = false;
     let mut app: Option<String> = None;
     let mut output: Option<PathBuf> = None;
 
@@ -239,6 +243,7 @@ fn cmd_run(args: &[String]) -> ExitCode {
             }
             "--keep-samples" => keep_samples = true,
             "--force" => force = true,
+            "--strict" => strict = true,
             "--app" => {
                 let v = next_val!("--app");
                 match report::trimmed_opaque_id(&v) {
@@ -312,6 +317,7 @@ fn cmd_run(args: &[String]) -> ExitCode {
     };
 
     let mut results = Vec::new();
+    let mut skipped: Vec<&str> = Vec::new();
     for (i, sc) in scenarios.iter().enumerate() {
         // Settle between scenarios too, not just between variants within
         // one — the same cross-contamination risk applies at scenario
@@ -319,7 +325,17 @@ fn cmd_run(args: &[String]) -> ExitCode {
         if i > 0 {
             runner::settle(&cfg);
         }
-        runner::run_scenario(sc, &cfg, &mut results);
+        if !runner::run_scenario(sc, &cfg, &mut results) {
+            skipped.push(&sc.name);
+        }
+    }
+    if !skipped.is_empty() {
+        eprintln!(
+            "tbench: {} of {} scenarios produced no results: {}",
+            skipped.len(),
+            scenarios.len(),
+            skipped.join(", ")
+        );
     }
 
     if results.is_empty() {
@@ -355,6 +371,12 @@ fn cmd_run(args: &[String]) -> ExitCode {
     // machine-readable JSON contract scripts pipe.
     eprintln!();
     eprintln!("{}", show::render(&doc));
+    if strict && !skipped.is_empty() {
+        return die(
+            "tbench: --strict: one or more scenarios produced no results",
+            1,
+        );
+    }
     ExitCode::SUCCESS
 }
 

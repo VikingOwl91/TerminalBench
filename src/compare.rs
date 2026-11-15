@@ -425,8 +425,9 @@ keep samples for this metric."
 
 fn parse_threshold(s: &str) -> Option<f64> {
     let s = s.trim();
-    let s = s.strip_suffix('%').unwrap_or(s);
-    s.parse::<f64>().ok().map(|v| v / 100.0)
+    let s = s.strip_suffix('%').unwrap_or(s).trim_end();
+    let v = s.parse::<f64>().ok()?;
+    (v.is_finite() && v >= 0.0).then_some(v / 100.0)
 }
 
 fn regression_fraction(metric: &str, baseline: &Value, latest: &Value) -> Option<f64> {
@@ -442,13 +443,9 @@ fn regression_fraction(metric: &str, baseline: &Value, latest: &Value) -> Option
     })
 }
 
-/// Returns (markdown, exit_code). exit 3 when a real regression fails.
-fn build_regression_report(
-    reports: &[Value],
-    labels: &[String],
-    threshold_str: &str,
-) -> (String, u8) {
-    let threshold = parse_threshold(threshold_str).unwrap_or(0.0);
+/// Returns (markdown, exit_code). exit 3 when a real regression fails or a
+/// baseline row has no counterpart in the latest report.
+fn build_regression_report(reports: &[Value], labels: &[String], threshold: f64) -> (String, u8) {
     let baseline = &reports[0];
     let latest = &reports[1];
     let mut base_by_key: Vec<(Key, Value)> = Vec::new();
@@ -467,8 +464,10 @@ fn build_regression_report(
     // (key, b, l, pct, sig_label, is_failing)
     let mut candidates: Vec<(Key, f64, f64, f64, String, bool)> = Vec::new();
     let mut any_fail = false;
+    let mut missing: Vec<Key> = Vec::new();
     for (key, base_res) in &base_by_key {
         let Some(latest_res) = latest_by_key.get(key) else {
+            missing.push(key.clone());
             continue;
         };
         let metric = &key.0;
@@ -516,12 +515,25 @@ samples on both sides fall back to the threshold-only check."
             .to_string(),
         String::new(),
     ];
+    if !missing.is_empty() {
+        lines.push(
+            "Baseline rows with no result in the latest report (a metric that \
+disappeared cannot pass the gate):"
+                .to_string(),
+        );
+        lines.push(String::new());
+        for key in &missing {
+            lines.push(format!("- {}", row_label(key)));
+        }
+        lines.push(String::new());
+    }
+    let missing_code = if missing.is_empty() { 0 } else { 3 };
     if candidates.is_empty() {
         lines.push(format!(
             "No regressions above the {:.1}% threshold.",
             threshold * 100.0
         ));
-        return (lines.join("\n"), 0);
+        return (lines.join("\n"), missing_code);
     }
 
     lines.push("| Metric | Baseline | Latest | Change | Significant? | Regression? |".to_string());
@@ -547,7 +559,7 @@ samples on both sides fall back to the threshold-only check."
             "No row met both the threshold and the significance bar, so this is not treated as a regression."
                 .to_string(),
         );
-        return (lines.join("\n"), 0);
+        return (lines.join("\n"), missing_code);
     }
     (lines.join("\n"), 3)
 }
@@ -1427,6 +1439,20 @@ pub fn cmd_compare(args: &[String], root: &Path) -> ExitCode {
             2,
         );
     }
+    let threshold_value = match threshold.as_deref() {
+        None => None,
+        Some(raw) => match parse_threshold(raw) {
+            Some(v) => Some(v),
+            None => {
+                return die(
+                    &format!(
+                        "tbench: --threshold must be a non-negative percentage such as 10%, got '{raw}'"
+                    ),
+                    2,
+                )
+            }
+        },
+    };
     if threshold.is_some() && files.len() != 2 {
         return die(
             "tbench: --threshold requires exactly 2 files (baseline latest)",
@@ -1453,8 +1479,8 @@ pub fn cmd_compare(args: &[String], root: &Path) -> ExitCode {
 
     let mut exit_code: u8 = 0;
     let mut reg_text: Option<String> = None;
-    if let Some(ts) = &threshold {
-        let (text, code) = build_regression_report(&reports, &labels, ts);
+    if let Some(threshold) = threshold_value {
+        let (text, code) = build_regression_report(&reports, &labels, threshold);
         reg_text = Some(text);
         exit_code = code;
     }
@@ -1914,6 +1940,32 @@ mod tests {
         assert_eq!(parse_threshold("2.5%"), Some(0.025));
         assert_eq!(parse_threshold(" 5 "), Some(0.05));
         assert_eq!(parse_threshold("bad"), None);
+        assert_eq!(parse_threshold("-5%"), None);
+        assert_eq!(parse_threshold("NaN"), None);
+        assert_eq!(parse_threshold("inf"), None);
+        assert_eq!(parse_threshold("0"), Some(0.0));
+    }
+
+    #[test]
+    fn regression_gate_fails_when_a_baseline_row_is_missing() {
+        let row = |metric: &str, median: f64| {
+            serde_json::json!({
+                "metric": metric, "shell": "zsh", "unit": "ms", "median": median,
+                "measurement": {"direction": "lower-is-better"}
+            })
+        };
+        let baseline = serde_json::json!({
+            "results": [row("shell.startup", 10.0), row("cmd.overhead", 5.0)]
+        });
+        let same = baseline.clone();
+        let dropped = serde_json::json!({"results": [row("shell.startup", 10.0)]});
+        let labels = vec!["a".to_string(), "b".to_string()];
+
+        let (_, code) = build_regression_report(&[baseline.clone(), same], &labels, 0.1);
+        assert_eq!(code, 0);
+        let (text, code) = build_regression_report(&[baseline, dropped], &labels, 0.1);
+        assert_eq!(code, 3);
+        assert!(text.contains("- cmd.overhead (zsh) (ms)"), "{text}");
     }
 
     #[test]
