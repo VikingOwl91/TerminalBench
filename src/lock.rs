@@ -61,6 +61,7 @@ pub fn acquire(path: &Path, force: bool) -> Result<Lock, String> {
         crate::report::utc_timestamp()
     );
     std::fs::write(path, content).map_err(|e| format!("tbench: failed to write lock: {e}"))?;
+    crate::cleanup::set_lock(path);
     Ok(Lock {
         path: path.to_path_buf(),
         owned: true,
@@ -69,6 +70,7 @@ pub fn acquire(path: &Path, force: bool) -> Result<Lock, String> {
 
 impl Drop for Lock {
     fn drop(&mut self) {
+        crate::cleanup::clear_lock();
         // Only remove a lock this process itself owns.
         if self.owned {
             if let Some(pid) = read_lock_pid(&self.path) {

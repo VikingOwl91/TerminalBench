@@ -43,7 +43,9 @@ fn probe_impl() -> Option<&'static str> {
     unsafe { libc::cfmakeraw(&mut raw) };
     raw.c_cc[libc::VMIN] = 0;
     raw.c_cc[libc::VTIME] = 10;
+    crate::cleanup::save_termios(&saved);
     if unsafe { libc::tcsetattr(fd, libc::TCSANOW, &raw) } != 0 {
+        crate::cleanup::clear_termios();
         return None;
     }
 
@@ -78,5 +80,6 @@ fn probe_impl() -> Option<&'static str> {
     })();
 
     unsafe { libc::tcsetattr(fd, libc::TCSANOW, &saved) };
+    crate::cleanup::clear_termios();
     verdict
 }
