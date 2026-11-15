@@ -404,9 +404,12 @@ identity — if the accumulated reports span more than one terminal (e.g. you
 re-ran `tbench run` in Ghostty and again in iTerm over time), each terminal
 becomes its own colored line/table column rather than being averaged
 together. Markdown output is one table per `metric [variant] (shell) (unit)`
-row: timestamp, terminal, median, and a `Δ%` vs that terminal's previous
-point, annotated `(better)`/`(worse)` (direction-aware, same convention as
-`compare`). The HTML report is one small-multiple line chart per row
+row: timestamp, terminal, median, and the change from that terminal's
+previous point. The change is annotated `(better)`/`(worse)`
+(direction-aware) only beyond a noise band, `--noise PCT` (default 5%);
+inside it the number is shown as `(within noise)`, because identical runs
+already differ by a few percent ([`docs/aa-baseline.md`](docs/aa-baseline.md)).
+Percentage-unit rows are compared in points with a band of 1 point. The HTML report is one small-multiple line chart per row
 (x = report index, y = median), zero-baselined by default — except a
 narrow-range series (all values within ~20% of each other) gets a
 non-zero, explicitly annotated baseline so the line isn't flattened to
