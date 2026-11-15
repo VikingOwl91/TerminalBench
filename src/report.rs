@@ -33,196 +33,46 @@ fn round_to(v: f64, decimals: i32) -> f64 {
     (v * f).round() / f
 }
 
-/// Proxy notes are closed profile data in Reporting Spec v1: caller prose
-/// is deliberately replaced so synonyms cannot broaden a proxy claim.
-pub fn proxy_safe_note(metric: &str, variant: Option<&str>) -> Option<&'static str> {
-    match (metric, variant) {
-        ("render.throughput", _) => Some(
-            "Proxy only: measures producer-side PTY write completion; it does not observe terminal parsing, final-frame presentation, frame time, FPS, pixels presented, or complete rendering.",
-        ),
-        ("scroll.proxy", _) => Some(
-            "Proxy only: measures producer-side PTY write completion for the scroll workload; it does not observe scroll, redraw, display events, frame time, FPS, pixels presented, or complete rendering.",
-        ),
-        ("input.latency", _) => Some(
-            "Proxy only: measures a synthetic PTY echo round trip; it does not observe physical keypress, GUI input latency, screen response, keypress-to-display, or keypress-to-photon latency.",
-        ),
-        ("fire.fps", Some(_)) => Some(
-            "Proxy only: measures producer-completed frames for a truecolor repaint stream at the cell geometry recorded by variant; throughput includes overlapped frame composition and PTY writing and does not observe terminal parsing, compositing, or confirmed on-screen frame presentation, so this fps is not a measured render frame rate.",
-        ),
-        ("fire.fps", None) => Some(
-            "Proxy only: measures producer-side PTY write completion for a live window-sized truecolor repaint stream; it does not observe terminal parsing, compositing, or confirmed on-screen frame presentation, so this fps is a producer-side drain-rate proxy, not a measured render frame rate, and it scales inversely with window cell count so values are only comparable at matching window geometry.",
-        ),
-        _ => None,
-    }
-}
-
-struct Profile {
-    profile: &'static str,
-    classification: &'static str,
-    method: &'static str,
-    scope: &'static str,
-    boundary: &'static str,
-    direction: &'static str,
-    limitation: &'static str,
-    excluded: &'static str,
-    workload_prefix: &'static str, // variant appended when it contains "{variant}"
-}
-
-fn profile_for(metric: &str, unit: &str, variant: Option<&str>, backend: &str) -> Profile {
-    if (metric, unit, backend) == ("resource.cpu", "pct", crate::resource::BACKEND_PROCFS) {
-        return Profile {
-            profile: "org.terminalbench.resource.cpu.window",
-            classification: "sampled",
-            method: "org.terminalbench.method.process-cpu-time-window",
-            scope: "terminal-process-cpu",
-            boundary: "identified-terminal-process-cpu-time-over-wall-clock-window",
-            direction: "lower-is-better",
-            limitation: "Covers one identified process over fixed wall-clock windows at kernel clock-tick resolution; helper processes are not included.",
-            excluded: "Whole-system CPU cost",
-            workload_prefix: "urn:tbench:workload:resource-window-{variant}:v1",
-        };
-    }
-    match (metric, unit, variant) {
-        ("shell.startup", "ms", _) => Profile {
-            profile: "org.terminalbench.shell.startup",
-            classification: "sampled",
-            method: "org.terminalbench.method.process-wall-clock",
-            scope: "shell-process-startup",
-            boundary: "process-invocation-to-process-exit",
-            direction: "lower-is-better",
-            limitation: "Includes shell startup configuration and process scheduling; it does not isolate terminal rendering.",
-            excluded: "Terminal rendering latency",
-            workload_prefix: "urn:tbench:workload:shell-startup:v1",
-        },
-        ("cmd.overhead", "us", _) => Profile {
-            profile: "org.terminalbench.command.overhead",
-            classification: "sampled",
-            method: "org.terminalbench.method.process-wall-clock",
-            scope: "shell-command-process",
-            boundary: "process-invocation-through-command-exit",
-            direction: "lower-is-better",
-            limitation: "Includes process spawn and shell initialization in addition to builtin dispatch.",
-            excluded: "In-process command dispatch latency",
-            workload_prefix: "urn:tbench:workload:command-overhead:v1",
-        },
-        ("render.throughput", "MBps", _) => Profile {
-            profile: "org.terminalbench.render.throughput.bytes",
-            classification: "proxy",
-            method: "org.terminalbench.method.pty-write-wall-clock",
-            scope: "pty-output-pipeline",
-            boundary: "fixture-write-start-to-producer-exit",
-            direction: "higher-is-better",
-            limitation: "Measures producer-side PTY write completion; terminal parsing, final-frame presentation, and frame skipping are not observed.",
-            excluded: "On-screen rendering throughput",
-            workload_prefix: "urn:tbench:workload:render-{variant}:v1",
-        },
-        ("render.throughput", "linesps", _) => Profile {
-            profile: "org.terminalbench.render.throughput.lines",
-            classification: "proxy",
-            method: "org.terminalbench.method.pty-write-wall-clock",
-            scope: "pty-output-pipeline",
-            boundary: "fixture-write-start-to-producer-exit",
-            direction: "higher-is-better",
-            limitation: "Measures producer-side PTY write completion; terminal parsing, final-frame presentation, and frame skipping are not observed.",
-            excluded: "On-screen rendering throughput",
-            workload_prefix: "urn:tbench:workload:render-{variant}:v1",
-        },
-        ("scroll.proxy", "ms", _) => Profile {
-            profile: "org.terminalbench.scroll.proxy",
-            classification: "proxy",
-            method: "org.terminalbench.method.pty-write-wall-clock",
-            scope: "pty-output-and-scrollback-proxy",
-            boundary: "fixture-write-start-to-producer-exit",
-            direction: "lower-is-better",
-            limitation: "No scroll, redraw, frame-presentation, or display event is observed.",
-            excluded: "On-screen scroll latency",
-            workload_prefix: "urn:tbench:workload:scroll-proxy:v1",
-        },
-        ("input.latency", "ms", _) => Profile {
-            profile: "org.terminalbench.input.pty-round-trip",
-            classification: "proxy",
-            method: "org.terminalbench.method.zpty-echo-round-trip",
-            scope: "pseudo-terminal-echo",
-            boundary: "byte-write-to-pty-echo-read",
-            direction: "lower-is-better",
-            limitation: "Uses a synthetic PTY echo and excludes physical input devices, GUI event routing, rendering, and display presentation.",
-            excluded: "Physical-keypress-to-photon latency",
-            workload_prefix: "urn:tbench:workload:input-{variant}:v1",
-        },
-        ("resource.mem", "MB", _) => Profile {
-            profile: "org.terminalbench.resource.memory",
-            classification: "sampled",
-            method: "org.terminalbench.method.process-sample",
-            scope: "terminal-process-resident-memory",
-            boundary: "identified-terminal-process-rss-sample",
-            direction: "lower-is-better",
-            limitation: "Samples one identified process and may omit helper-process or shared-memory costs.",
-            excluded: "Whole-system memory cost",
-            workload_prefix: "urn:tbench:workload:resource-{variant}:v1",
-        },
-        ("resource.cpu", "pct", _) => Profile {
-            profile: "org.terminalbench.resource.cpu",
-            classification: "sampled",
-            method: "org.terminalbench.method.process-sample",
-            scope: "terminal-process-cpu",
-            boundary: "identified-terminal-process-cpu-sample",
-            direction: "lower-is-better",
-            limitation: "Process CPU is a sampled operating-system statistic and is not an instantaneous whole-system measurement.",
-            excluded: "Whole-system CPU cost",
-            workload_prefix: "urn:tbench:workload:resource-{variant}:v1",
-        },
-        ("fire.fps", "fps", Some(_)) => Profile {
-            profile: "org.terminalbench.fire.fps.geometry",
-            classification: "proxy",
-            method: "org.terminalbench.method.pty-write-wall-clock",
-            scope: "pty-output-pipeline",
-            boundary: "frame-write-start-to-producer-exit",
-            direction: "higher-is-better",
-            limitation: "Measures producer-side PTY write completion for a truecolor repaint stream at the cell geometry recorded by variant; terminal parsing, compositing, and confirmed on-screen frame presentation are not observed.",
-            excluded: "Confirmed on-screen frame rate",
-            workload_prefix: "urn:tbench:workload:fire-{variant}:v1",
-        },
-        ("fire.fps", "fps", None) => Profile {
-            profile: "org.terminalbench.fire.fps",
-            classification: "proxy",
-            method: "org.terminalbench.method.pty-write-wall-clock",
-            scope: "pty-output-pipeline",
-            boundary: "frame-write-start-to-producer-exit",
-            direction: "higher-is-better",
-            limitation: "Measures producer-side PTY write completion for a live window-sized truecolor repaint stream; terminal parsing, compositing, and confirmed on-screen frame presentation are not observed, and fps depends on window cell count.",
-            excluded: "Confirmed on-screen frame rate",
-            workload_prefix: "urn:tbench:workload:fire:v1",
-        },
-        _ => Profile {
-            profile: "org.terminalbench.unsupported",
-            classification: "proxy",
-            method: "org.terminalbench.method.unsupported",
-            scope: "unknown",
-            boundary: "unknown",
-            direction: "lower-is-better",
-            limitation: "No Reporting Specification v1 profile is registered for this metric and unit.",
-            excluded: "Any standardized performance claim",
-            workload_prefix: "urn:tbench:workload:unknown:v1",
-        },
-    }
-}
-
+/// The registered profile for a row, from the validator's registry (the
+/// single copy in code). A row no profile covers is emitted as
+/// "unsupported", which the validator rejects.
 fn measurement_json(row: &ResultRow) -> Value {
-    let p = profile_for(&row.metric, &row.unit, row.variant.as_deref(), &row.backend);
-    let workload_id = if p.workload_prefix.contains("{variant}") {
-        p.workload_prefix
-            .replace("{variant}", row.variant.as_deref().unwrap_or("unknown"))
-    } else {
-        p.workload_prefix.to_string()
+    use crate::validate::Profile;
+    const UNSUPPORTED: Profile = Profile {
+        metric: "",
+        unit: "",
+        profile_id: "org.terminalbench.unsupported",
+        classification: "proxy",
+        method_id: "org.terminalbench.method.unsupported",
+        method_version: "1.0.0",
+        scope: "unknown",
+        observed_boundary: "unknown",
+        direction: "lower-is-better",
+        limitation: "No Reporting Specification v1 profile is registered for this metric and unit.",
+        excluded: "Any standardized performance claim",
+        backends: &[],
+        variants: &[],
+        shell_required: false,
+        workload: "urn:tbench:workload:unknown:v1",
     };
+    let p = crate::validate::profile_for_row(
+        &row.metric,
+        &row.unit,
+        row.variant.as_deref(),
+        &row.backend,
+    )
+    .unwrap_or(&UNSUPPORTED);
+    let workload_id = p
+        .workload
+        .replace("{variant}", row.variant.as_deref().unwrap_or("unknown"));
     json!({
-        "profile_id": p.profile,
+        "profile_id": p.profile_id,
         "profile_version": "1.0.0",
         "classification": p.classification,
-        "method_id": p.method,
-        "method_version": "1.0.0",
+        "method_id": p.method_id,
+        "method_version": p.method_version,
         "scope": p.scope,
-        "observed_boundary": p.boundary,
+        "observed_boundary": p.observed_boundary,
         "unit": row.unit,
         "direction": p.direction,
         "limitations": [p.limitation],
@@ -250,7 +100,16 @@ fn result_json(row: &ResultRow) -> Value {
     if let Some(v) = &row.variant {
         m.insert("variant".into(), json!(v));
     }
-    let effective_notes = proxy_safe_note(&row.metric, row.variant.as_deref())
+    // Proxy notes are closed profile data in Reporting Spec v1: caller
+    // prose is replaced so synonyms cannot broaden a proxy claim.
+    let profile_id = crate::validate::profile_for_row(
+        &row.metric,
+        &row.unit,
+        row.variant.as_deref(),
+        &row.backend,
+    )
+    .map(|p| p.profile_id);
+    let effective_notes = crate::validate::canonical_proxy_note(&row.metric, profile_id)
         .map(str::to_string)
         .or_else(|| row.notes.clone());
     if let Some(n) = effective_notes {
